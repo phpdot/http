@@ -37,7 +37,7 @@ final class ServiceUnavailableException extends HttpException
         array $extensions = [],
         ?Throwable $previous = null,
     ) {
-        parent::__construct(503, $message, $detail, $type, $instance, $extensions, $previous);
+        parent::__construct(503, $message, $detail, $type, $instance, array_merge(['retry_after' => $this->retryAfter], $extensions), $previous);
     }
 
     /**

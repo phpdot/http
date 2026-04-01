@@ -634,7 +634,15 @@ final class Request implements ServerRequestInterface
     {
         $query = $this->getQueryParams();
         $body = $this->request->getParsedBody();
-        $bodyArray = is_array($body) ? $body : [];
+
+        if (is_array($body)) {
+            $bodyArray = $body;
+        } elseif (is_object($body)) {
+            $bodyArray = get_object_vars($body);
+        } else {
+            $bodyArray = [];
+        }
+
         $result = $query;
 
         foreach ($bodyArray as $key => $value) {
@@ -749,7 +757,7 @@ final class Request implements ServerRequestInterface
             return $value !== [];
         }
 
-        return $value !== null && $value !== false && $value !== 0 && $value !== 0.0;
+        return $value !== null;
     }
 
     /**
@@ -1269,13 +1277,15 @@ final class Request implements ServerRequestInterface
      */
     public function ips(): array
     {
-        $forwardedFor = $this->request->getHeaderLine('X-Forwarded-For');
+        if ($this->isTrustedProxy() && (self::$trustedHeaders & self::HEADER_X_FORWARDED_FOR) !== 0) {
+            $forwardedFor = $this->request->getHeaderLine('X-Forwarded-For');
 
-        if ($forwardedFor === '') {
-            return [$this->serverParam('REMOTE_ADDR', '127.0.0.1')];
+            if ($forwardedFor !== '') {
+                return array_map('trim', explode(',', $forwardedFor));
+            }
         }
 
-        return array_map('trim', explode(',', $forwardedFor));
+        return [$this->serverParam('REMOTE_ADDR', '127.0.0.1')];
     }
 
     /**

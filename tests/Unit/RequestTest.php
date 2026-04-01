@@ -404,6 +404,23 @@ final class RequestTest extends TestCase
         self::assertSame('b', $all['only_body']);
     }
 
+    #[Test]
+    public function all_handles_object_parsed_body(): void
+    {
+        $body = new \stdClass();
+        $body->email = 'test@example.com';
+        $body->name = 'Omar';
+
+        $inner = (new ServerRequest('POST', '/'))
+            ->withParsedBody($body);
+        $request = new Request($inner);
+
+        $all = $request->all();
+
+        self::assertSame('test@example.com', $all['email']);
+        self::assertSame('Omar', $all['name']);
+    }
+
     // --- only(), except() ---
 
     #[Test]
@@ -458,13 +475,15 @@ final class RequestTest extends TestCase
     public function filled_checks_non_empty_value(): void
     {
         $inner = (new ServerRequest('POST', '/'))
-            ->withParsedBody(['name' => 'John', 'empty' => '', 'space' => '  ', 'zero' => 0]);
+            ->withParsedBody(['name' => 'John', 'empty' => '', 'space' => '  ', 'zero' => 0, 'false' => false, 'null' => null]);
         $request = new Request($inner);
 
         self::assertTrue($request->filled('name'));
         self::assertFalse($request->filled('empty'));
         self::assertFalse($request->filled('space'));
-        self::assertFalse($request->filled('zero'));
+        self::assertTrue($request->filled('zero'));
+        self::assertTrue($request->filled('false'));
+        self::assertFalse($request->filled('null'));
         self::assertFalse($request->filled('missing'));
     }
 
@@ -1280,11 +1299,24 @@ final class RequestTest extends TestCase
     #[Test]
     public function ips_returns_forwarded_chain(): void
     {
+        Request::setTrustedProxies(['10.0.0.0/8'], Request::HEADER_X_FORWARDED_ALL);
         $inner = (new ServerRequest('GET', '/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-For', '203.0.113.50, 198.51.100.1');
         $request = new Request($inner);
 
         self::assertSame(['203.0.113.50', '198.51.100.1'], $request->ips());
+        Request::setTrustedProxies([], 0);
+    }
+
+    #[Test]
+    public function ips_ignores_forwarded_for_without_trusted_proxy(): void
+    {
+        Request::setTrustedProxies([], 0);
+        $inner = (new ServerRequest('GET', '/', [], null, '1.1', ['REMOTE_ADDR' => '203.0.113.50']))
+            ->withHeader('X-Forwarded-For', '10.0.0.1, 192.168.1.1');
+        $request = new Request($inner);
+
+        self::assertSame(['203.0.113.50'], $request->ips());
     }
 
     #[Test]
