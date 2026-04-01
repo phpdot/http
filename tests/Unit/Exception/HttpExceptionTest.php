@@ -159,4 +159,53 @@ final class HttpExceptionTest extends TestCase
 
         self::assertSame($previous, $exception->getPrevious());
     }
+
+    #[Test]
+    public function http_exception_defaults_message_to_status_text(): void
+    {
+        $exception = new NotFoundException();
+
+        self::assertSame('Not Found', $exception->getMessage());
+    }
+
+    #[Test]
+    public function unprocessable_entity_problem_details_includes_errors(): void
+    {
+        $errors = ['email' => ['Already taken']];
+        $exception = new UnprocessableEntityException($errors);
+
+        $details = $exception->toProblemDetails();
+
+        self::assertSame($errors, $details['errors']);
+    }
+
+    #[Test]
+    public function method_not_allowed_problem_details_includes_allowed_methods(): void
+    {
+        $exception = new MethodNotAllowedException(['GET', 'POST']);
+
+        $details = $exception->toProblemDetails();
+
+        self::assertSame(['GET', 'POST'], $details['allowed_methods']);
+    }
+
+    #[Test]
+    public function too_many_requests_problem_details_includes_retry_after(): void
+    {
+        $exception = new TooManyRequestsException(60);
+
+        $details = $exception->toProblemDetails();
+
+        self::assertSame(60, $details['retry_after']);
+    }
+
+    #[Test]
+    public function service_unavailable_problem_details_includes_retry_after(): void
+    {
+        $exception = new ServiceUnavailableException(120);
+
+        $details = $exception->toProblemDetails();
+
+        self::assertSame(120, $details['retry_after']);
+    }
 }

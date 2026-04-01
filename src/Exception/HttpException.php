@@ -39,7 +39,7 @@ class HttpException extends RuntimeException
         private readonly array $extensions = [],
         ?Throwable $previous = null,
     ) {
-        parent::__construct($message, $statusCode, $previous);
+        parent::__construct($message !== '' ? $message : StatusText::get($statusCode), $statusCode, $previous);
     }
 
     /**
