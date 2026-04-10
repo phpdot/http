@@ -5,8 +5,10 @@ declare(strict_types=1);
 /**
  * Response Factory
  *
- * Creates PSR-7 response instances with convenient helpers for JSON, HTML,
+ * Creates Response instances with convenient helpers for JSON, HTML,
  * file downloads, caching, cookies, and RFC 9457 problem details.
+ *
+ * Works standalone — no PSR-17 factory required.
  *
  * @author Omar Hamdan <omar@phpdot.com>
  * @license MIT
@@ -16,10 +18,8 @@ namespace PHPdot\Http;
 
 use DateTimeInterface;
 use DateTimeZone;
-use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Message\StreamFactoryInterface;
 use RuntimeException;
 
 final class ResponseFactory
@@ -46,31 +46,18 @@ final class ResponseFactory
     ];
 
     /**
-     * @param ResponseFactoryInterface $responseFactory The PSR-17 response factory
-     * @param StreamFactoryInterface $streamFactory The PSR-17 stream factory
-     */
-    public function __construct(
-        private readonly ResponseFactoryInterface $responseFactory,
-        private readonly StreamFactoryInterface $streamFactory,
-    ) {}
-
-    /**
      * Create a JSON response.
      *
      * @param mixed $data The data to encode as JSON
      * @param int $status The HTTP status code
      * @param int $options Additional JSON encoding options OR'd with defaults
      *
-     *
      * @throws \JsonException If encoding fails
-     * @return Response The JSON response
+     * @return JsonResponse The JSON response
      */
-    public function json(mixed $data, int $status = 200, int $options = 0): Response
+    public function json(mixed $data, int $status = 200, int $options = 0): JsonResponse
     {
-        $defaultOptions = JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
-        $body = json_encode($data, $defaultOptions | $options);
-
-        return $this->createResponse($body, $status, 'application/json');
+        return new JsonResponse($data, $status, [], $options);
     }
 
     /**
@@ -79,11 +66,11 @@ final class ResponseFactory
      * @param string $html The HTML content
      * @param int $status The HTTP status code
      *
-     * @return Response The HTML response
+     * @return HtmlResponse The HTML response
      */
-    public function html(string $html, int $status = 200): Response
+    public function html(string $html, int $status = 200): HtmlResponse
     {
-        return $this->createResponse($html, $status, 'text/html; charset=UTF-8');
+        return new HtmlResponse($html, $status);
     }
 
     /**
@@ -96,7 +83,7 @@ final class ResponseFactory
      */
     public function text(string $text, int $status = 200): Response
     {
-        return $this->createResponse($text, $status, 'text/plain; charset=UTF-8');
+        return new Response($status, ['Content-Type' => 'text/plain; charset=UTF-8'], $text);
     }
 
     /**
@@ -109,7 +96,7 @@ final class ResponseFactory
      */
     public function xml(string $xml, int $status = 200): Response
     {
-        return $this->createResponse($xml, $status, 'application/xml; charset=UTF-8');
+        return new Response($status, ['Content-Type' => 'application/xml; charset=UTF-8'], $xml);
     }
 
     /**
@@ -118,14 +105,11 @@ final class ResponseFactory
      * @param string $url The URL to redirect to
      * @param int $status The HTTP status code (default 302 Found)
      *
-     * @return Response The redirect response
+     * @return RedirectResponse The redirect response
      */
-    public function redirect(string $url, int $status = 302): Response
+    public function redirect(string $url, int $status = 302): RedirectResponse
     {
-        return new Response(
-            $this->responseFactory->createResponse($status)
-                ->withHeader('Location', $url),
-        );
+        return new RedirectResponse($url, $status);
     }
 
     /**
@@ -137,7 +121,7 @@ final class ResponseFactory
      */
     public function noContent(int $status = 204): Response
     {
-        return new Response($this->responseFactory->createResponse($status));
+        return new Response($status);
     }
 
     /**
@@ -149,7 +133,7 @@ final class ResponseFactory
      */
     public function raw(int $status = 200): Response
     {
-        return new Response($this->responseFactory->createResponse($status));
+        return new Response($status);
     }
 
     /**
@@ -160,7 +144,6 @@ final class ResponseFactory
      * @param string $path The absolute path to the file
      * @param string $name The download filename (defaults to basename)
      * @param array<string, string> $headers Additional headers to include
-     *
      *
      * @throws RuntimeException If the file does not exist or is not readable
      * @return Response The download response
@@ -190,8 +173,7 @@ final class ResponseFactory
             rawurlencode($fileName),
         );
 
-        $response = $this->createResponse($contents, 200, $mimeType)
-            ->withHeader('Content-Disposition', $disposition);
+        $response = new Response(200, ['Content-Type' => $mimeType, 'Content-Disposition' => $disposition], $contents);
 
         foreach ($headers as $headerName => $headerValue) {
             $response = $response->withHeader($headerName, $headerValue);
@@ -209,7 +191,6 @@ final class ResponseFactory
      * @param string $path The absolute path to the file
      * @param ServerRequestInterface $request The incoming request for Range header parsing
      * @param array<string, string> $headers Additional headers to include
-     *
      *
      * @throws RuntimeException If the file does not exist or is not readable
      * @return Response The file response
@@ -246,11 +227,13 @@ final class ResponseFactory
                 );
             }
 
-            $response = $this->createResponse($contents, 200, $mimeType)
-                ->withHeader('ETag', $etag)
-                ->withHeader('Last-Modified', $lastModified)
-                ->withHeader('Accept-Ranges', 'bytes')
-                ->withHeader('Content-Length', (string) $fileSize);
+            $response = new Response(200, [
+                'Content-Type' => $mimeType,
+                'ETag' => $etag,
+                'Last-Modified' => $lastModified,
+                'Accept-Ranges' => 'bytes',
+                'Content-Length' => (string) $fileSize,
+            ], $contents);
 
             foreach ($headers as $headerName => $headerValue) {
                 $response = $response->withHeader($headerName, $headerValue);
@@ -262,20 +245,14 @@ final class ResponseFactory
         $matches = [];
 
         if (preg_match('/^bytes=(\d*)-(\d*)$/', $rangeHeader, $matches) !== 1) {
-            return new Response(
-                $this->responseFactory->createResponse(416)
-                    ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize)),
-            );
+            return new Response(416, ['Content-Range' => sprintf('bytes */%d', $fileSize)]);
         }
 
         $start = $matches[1] !== '' ? (int) $matches[1] : null;
         $end = $matches[2] !== '' ? (int) $matches[2] : null;
 
         if ($start === null && $end === null) {
-            return new Response(
-                $this->responseFactory->createResponse(416)
-                    ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize)),
-            );
+            return new Response(416, ['Content-Range' => sprintf('bytes */%d', $fileSize)]);
         }
 
         if ($start === null) {
@@ -287,10 +264,7 @@ final class ResponseFactory
         }
 
         if ($start < 0 || $start > $end || $end >= $fileSize) {
-            return new Response(
-                $this->responseFactory->createResponse(416)
-                    ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize)),
-            );
+            return new Response(416, ['Content-Range' => sprintf('bytes */%d', $fileSize)]);
         }
 
         $length = max(1, $end - $start + 1);
@@ -312,12 +286,14 @@ final class ResponseFactory
             );
         }
 
-        $response = $this->createResponse($contents, 206, $mimeType)
-            ->withHeader('ETag', $etag)
-            ->withHeader('Last-Modified', $lastModified)
-            ->withHeader('Accept-Ranges', 'bytes')
-            ->withHeader('Content-Length', (string) $length)
-            ->withHeader('Content-Range', sprintf('bytes %d-%d/%d', $start, $end, $fileSize));
+        $response = new Response(206, [
+            'Content-Type' => $mimeType,
+            'ETag' => $etag,
+            'Last-Modified' => $lastModified,
+            'Accept-Ranges' => 'bytes',
+            'Content-Length' => (string) $length,
+            'Content-Range' => sprintf('bytes %d-%d/%d', $start, $end, $fileSize),
+        ], $contents);
 
         foreach ($headers as $headerName => $headerValue) {
             $response = $response->withHeader($headerName, $headerValue);
@@ -477,7 +453,7 @@ final class ResponseFactory
      */
     public function notModified(): Response
     {
-        return new Response($this->responseFactory->createResponse(304));
+        return new Response(304);
     }
 
     /**
@@ -530,7 +506,6 @@ final class ResponseFactory
      * @param string $instance A URI reference identifying the specific occurrence
      * @param array<string, mixed> $extensions Additional problem detail members
      *
-     *
      * @throws \JsonException If encoding fails
      * @return Response The problem details response
      */
@@ -541,7 +516,7 @@ final class ResponseFactory
         string $title = '',
         string $instance = '',
         array $extensions = [],
-    ): ResponseInterface {
+    ): Response {
         $resolvedTitle = $title !== '' ? $title : StatusText::get($status);
 
         $body = [
@@ -562,27 +537,7 @@ final class ResponseFactory
         $defaultOptions = JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
         $encoded = json_encode($body, $defaultOptions);
 
-        return $this->createResponse($encoded, $status, 'application/problem+json');
-    }
-
-    /**
-     * Create a response with a body and content type.
-     *
-     * @param string $body The response body
-     * @param int $status The HTTP status code
-     * @param string $contentType The Content-Type header value
-     *
-     * @return Response The response
-     */
-    private function createResponse(string $body, int $status, string $contentType): Response
-    {
-        $stream = $this->streamFactory->createStream($body);
-
-        return new Response(
-            $this->responseFactory->createResponse($status)
-                ->withHeader('Content-Type', $contentType)
-                ->withBody($stream),
-        );
+        return new Response($status, ['Content-Type' => 'application/problem+json'], $encoded);
     }
 
     /**
