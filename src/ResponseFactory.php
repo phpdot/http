@@ -5,10 +5,12 @@ declare(strict_types=1);
 /**
  * Response Factory
  *
- * Creates Response instances with convenient helpers for JSON, HTML,
+ * Full PSR-17 factory implementation with convenient helpers for JSON, HTML,
  * file downloads, caching, cookies, and RFC 9457 problem details.
  *
- * Works standalone — no PSR-17 factory required.
+ * Implements all five PSR-17 factory interfaces. Response creation uses
+ * the standalone Response class; the remaining four delegate to Nyholm
+ * internally.
  *
  * @author Omar Hamdan <omar@phpdot.com>
  * @license MIT
@@ -18,12 +20,25 @@ namespace PHPdot\Http;
 
 use DateTimeInterface;
 use DateTimeZone;
+use Nyholm\Psr7\Factory\Psr17Factory;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
+use Psr\Http\Message\UploadedFileFactoryInterface;
+use Psr\Http\Message\UploadedFileInterface;
+use Psr\Http\Message\UriFactoryInterface;
+use Psr\Http\Message\UriInterface;
 use RuntimeException;
 
-final class ResponseFactory implements ResponseFactoryInterface
+final class ResponseFactory implements
+    ResponseFactoryInterface,
+    ServerRequestFactoryInterface,
+    StreamFactoryInterface,
+    UriFactoryInterface,
+    UploadedFileFactoryInterface
 {
     /** @var array<string, string> */
     private const array MIME_TYPES = [
@@ -46,6 +61,17 @@ final class ResponseFactory implements ResponseFactoryInterface
         'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
 
+    private readonly Psr17Factory $psr17;
+
+    public function __construct()
+    {
+        $this->psr17 = new Psr17Factory();
+    }
+
+    // =========================================================================
+    // PSR-17 Factory Interfaces
+    // =========================================================================
+
     /**
      * Create a new response (PSR-17).
      *
@@ -58,6 +84,88 @@ final class ResponseFactory implements ResponseFactoryInterface
     {
         return new Response($code, [], '', '1.1', $reasonPhrase);
     }
+
+    /**
+     * Create a new server request (PSR-17).
+     *
+     * @param string $method The HTTP method
+     * @param UriInterface|string $uri The URI
+     * @param array<string, mixed> $serverParams Server parameters
+     */
+    public function createServerRequest(string $method, $uri, array $serverParams = []): ServerRequestInterface
+    {
+        return $this->psr17->createServerRequest($method, $uri, $serverParams);
+    }
+
+    /**
+     * Create a new stream from a string (PSR-17).
+     *
+     * @param string $content String content
+     */
+    public function createStream(string $content = ''): StreamInterface
+    {
+        return Stream::create($content);
+    }
+
+    /**
+     * Create a stream from an existing file (PSR-17).
+     *
+     * @param string $filename Filename or stream URI
+     * @param string $mode File mode
+     */
+    public function createStreamFromFile(string $filename, string $mode = 'r'): StreamInterface
+    {
+        $resource = fopen($filename, $mode);
+
+        if ($resource === false) {
+            throw new RuntimeException(sprintf('Unable to open file "%s"', $filename));
+        }
+
+        return new Stream($resource);
+    }
+
+    /**
+     * Create a new stream from an existing resource (PSR-17).
+     *
+     * @param resource $resource PHP resource
+     */
+    public function createStreamFromResource($resource): StreamInterface
+    {
+        return new Stream($resource);
+    }
+
+    /**
+     * Create a new URI (PSR-17).
+     *
+     * @param string $uri The URI string
+     */
+    public function createUri(string $uri = ''): UriInterface
+    {
+        return $this->psr17->createUri($uri);
+    }
+
+    /**
+     * Create a new uploaded file (PSR-17).
+     *
+     * @param StreamInterface $stream The uploaded file stream
+     * @param int|null $size File size in bytes
+     * @param int $error PHP upload error code
+     * @param string|null $clientFilename Client filename
+     * @param string|null $clientMediaType Client media type
+     */
+    public function createUploadedFile(
+        StreamInterface $stream,
+        ?int $size = null,
+        int $error = \UPLOAD_ERR_OK,
+        ?string $clientFilename = null,
+        ?string $clientMediaType = null,
+    ): UploadedFileInterface {
+        return $this->psr17->createUploadedFile($stream, $size, $error, $clientFilename, $clientMediaType);
+    }
+
+    // =========================================================================
+    // Convenience methods
+    // =========================================================================
 
     /**
      * Create a JSON response.
