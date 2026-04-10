@@ -63,9 +63,9 @@ final class ResponseFactory
      *
      *
      * @throws \JsonException If encoding fails
-     * @return ResponseInterface The JSON response
+     * @return Response The JSON response
      */
-    public function json(mixed $data, int $status = 200, int $options = 0): ResponseInterface
+    public function json(mixed $data, int $status = 200, int $options = 0): Response
     {
         $defaultOptions = JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
         $body = json_encode($data, $defaultOptions | $options);
@@ -79,9 +79,9 @@ final class ResponseFactory
      * @param string $html The HTML content
      * @param int $status The HTTP status code
      *
-     * @return ResponseInterface The HTML response
+     * @return Response The HTML response
      */
-    public function html(string $html, int $status = 200): ResponseInterface
+    public function html(string $html, int $status = 200): Response
     {
         return $this->createResponse($html, $status, 'text/html; charset=UTF-8');
     }
@@ -92,9 +92,9 @@ final class ResponseFactory
      * @param string $text The text content
      * @param int $status The HTTP status code
      *
-     * @return ResponseInterface The plain text response
+     * @return Response The plain text response
      */
-    public function text(string $text, int $status = 200): ResponseInterface
+    public function text(string $text, int $status = 200): Response
     {
         return $this->createResponse($text, $status, 'text/plain; charset=UTF-8');
     }
@@ -105,9 +105,9 @@ final class ResponseFactory
      * @param string $xml The XML content
      * @param int $status The HTTP status code
      *
-     * @return ResponseInterface The XML response
+     * @return Response The XML response
      */
-    public function xml(string $xml, int $status = 200): ResponseInterface
+    public function xml(string $xml, int $status = 200): Response
     {
         return $this->createResponse($xml, $status, 'application/xml; charset=UTF-8');
     }
@@ -118,12 +118,14 @@ final class ResponseFactory
      * @param string $url The URL to redirect to
      * @param int $status The HTTP status code (default 302 Found)
      *
-     * @return ResponseInterface The redirect response
+     * @return Response The redirect response
      */
-    public function redirect(string $url, int $status = 302): ResponseInterface
+    public function redirect(string $url, int $status = 302): Response
     {
-        return $this->responseFactory->createResponse($status)
-            ->withHeader('Location', $url);
+        return new Response(
+            $this->responseFactory->createResponse($status)
+                ->withHeader('Location', $url),
+        );
     }
 
     /**
@@ -131,11 +133,11 @@ final class ResponseFactory
      *
      * @param int $status The HTTP status code (default 204 No Content)
      *
-     * @return ResponseInterface The empty response
+     * @return Response The empty response
      */
-    public function noContent(int $status = 204): ResponseInterface
+    public function noContent(int $status = 204): Response
     {
-        return $this->responseFactory->createResponse($status);
+        return new Response($this->responseFactory->createResponse($status));
     }
 
     /**
@@ -143,11 +145,11 @@ final class ResponseFactory
      *
      * @param int $status The HTTP status code
      *
-     * @return ResponseInterface The raw response
+     * @return Response The raw response
      */
-    public function raw(int $status = 200): ResponseInterface
+    public function raw(int $status = 200): Response
     {
-        return $this->responseFactory->createResponse($status);
+        return new Response($this->responseFactory->createResponse($status));
     }
 
     /**
@@ -161,9 +163,9 @@ final class ResponseFactory
      *
      *
      * @throws RuntimeException If the file does not exist or is not readable
-     * @return ResponseInterface The download response
+     * @return Response The download response
      */
-    public function download(string $path, string $name = '', array $headers = []): ResponseInterface
+    public function download(string $path, string $name = '', array $headers = []): Response
     {
         if (!is_file($path) || !is_readable($path)) {
             throw new RuntimeException(
@@ -210,9 +212,9 @@ final class ResponseFactory
      *
      *
      * @throws RuntimeException If the file does not exist or is not readable
-     * @return ResponseInterface The file response
+     * @return Response The file response
      */
-    public function file(string $path, ServerRequestInterface $request, array $headers = []): ResponseInterface
+    public function file(string $path, ServerRequestInterface $request, array $headers = []): Response
     {
         if (!is_file($path) || !is_readable($path)) {
             throw new RuntimeException(
@@ -260,16 +262,20 @@ final class ResponseFactory
         $matches = [];
 
         if (preg_match('/^bytes=(\d*)-(\d*)$/', $rangeHeader, $matches) !== 1) {
-            return $this->responseFactory->createResponse(416)
-                ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize));
+            return new Response(
+                $this->responseFactory->createResponse(416)
+                    ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize)),
+            );
         }
 
         $start = $matches[1] !== '' ? (int) $matches[1] : null;
         $end = $matches[2] !== '' ? (int) $matches[2] : null;
 
         if ($start === null && $end === null) {
-            return $this->responseFactory->createResponse(416)
-                ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize));
+            return new Response(
+                $this->responseFactory->createResponse(416)
+                    ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize)),
+            );
         }
 
         if ($start === null) {
@@ -281,8 +287,10 @@ final class ResponseFactory
         }
 
         if ($start < 0 || $start > $end || $end >= $fileSize) {
-            return $this->responseFactory->createResponse(416)
-                ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize));
+            return new Response(
+                $this->responseFactory->createResponse(416)
+                    ->withHeader('Content-Range', sprintf('bytes */%d', $fileSize)),
+            );
         }
 
         $length = max(1, $end - $start + 1);
@@ -465,11 +473,11 @@ final class ResponseFactory
     /**
      * Create a 304 Not Modified response.
      *
-     * @return ResponseInterface The 304 response
+     * @return Response The 304 response
      */
-    public function notModified(): ResponseInterface
+    public function notModified(): Response
     {
-        return $this->responseFactory->createResponse(304);
+        return new Response($this->responseFactory->createResponse(304));
     }
 
     /**
@@ -524,7 +532,7 @@ final class ResponseFactory
      *
      *
      * @throws \JsonException If encoding fails
-     * @return ResponseInterface The problem details response
+     * @return Response The problem details response
      */
     public function problem(
         int $status,
@@ -564,15 +572,17 @@ final class ResponseFactory
      * @param int $status The HTTP status code
      * @param string $contentType The Content-Type header value
      *
-     * @return ResponseInterface The response
+     * @return Response The response
      */
-    private function createResponse(string $body, int $status, string $contentType): ResponseInterface
+    private function createResponse(string $body, int $status, string $contentType): Response
     {
         $stream = $this->streamFactory->createStream($body);
 
-        return $this->responseFactory->createResponse($status)
-            ->withHeader('Content-Type', $contentType)
-            ->withBody($stream);
+        return new Response(
+            $this->responseFactory->createResponse($status)
+                ->withHeader('Content-Type', $contentType)
+                ->withBody($stream),
+        );
     }
 
     /**
