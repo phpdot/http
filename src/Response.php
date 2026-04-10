@@ -5,10 +5,8 @@ declare(strict_types=1);
 /**
  * Response
  *
- * Immutable decorator over PSR-7 ResponseInterface providing a rich,
- * expressive API for building HTTP responses. Implements ResponseInterface
- * itself, delegating all PSR-7 methods to the inner response while adding
- * convenience methods for headers, cookies, and caching.
+ * Standalone PSR-7 ResponseInterface implementation. Create responses directly
+ * without factories. Immutable — all with*() methods return a new instance.
  *
  * @author Omar Hamdan <omar@phpdot.com>
  * @license MIT
@@ -16,192 +14,174 @@ declare(strict_types=1);
 
 namespace PHPdot\Http;
 
+use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 
-final class Response implements ResponseInterface
+class Response implements ResponseInterface
 {
+    private int $statusCode;
+
+    private string $reasonPhrase;
+
+    /** @var array<string, list<string>> */
+    private array $headers = [];
+
+    /** @var array<string, string> Original header name casing */
+    private array $headerNames = [];
+
+    private StreamInterface $body;
+
+    private string $protocolVersion = '1.1';
+
     /**
-     * @param ResponseInterface $response The inner PSR-7 response
+     * @param int $status The HTTP status code
+     * @param array<string, string|string[]> $headers Response headers
+     * @param string|StreamInterface $body The response body
+     * @param string $version The HTTP protocol version
+     * @param string $reason The reason phrase (auto-resolved from status if empty)
      */
     public function __construct(
-        private readonly ResponseInterface $response,
-    ) {}
+        int $status = 200,
+        array $headers = [],
+        string|StreamInterface $body = '',
+        string $version = '1.1',
+        string $reason = '',
+    ) {
+        $this->statusCode = $status;
+        $this->reasonPhrase = $reason !== '' ? $reason : StatusText::get($status);
+        $this->protocolVersion = $version;
+
+        foreach ($headers as $name => $value) {
+            $normalized = strtolower($name);
+            $this->headerNames[$normalized] = $name;
+            $this->headers[$normalized] = is_array($value) ? array_values($value) : [$value];
+        }
+
+        $this->body = $body instanceof StreamInterface ? $body : Stream::create($body);
+    }
 
     // =========================================================================
-    // PSR-7 MessageInterface delegation
+    // PSR-7 ResponseInterface
     // =========================================================================
 
-    /**
-     * Get the HTTP protocol version.
-     *
-     * @return string The HTTP protocol version
-     */
+    public function getStatusCode(): int
+    {
+        return $this->statusCode;
+    }
+
+    public function withStatus(int $code, string $reasonPhrase = ''): static
+    {
+        $clone = clone $this;
+        $clone->statusCode = $code;
+        $clone->reasonPhrase = $reasonPhrase !== '' ? $reasonPhrase : StatusText::get($code);
+
+        return $clone;
+    }
+
+    public function getReasonPhrase(): string
+    {
+        return $this->reasonPhrase;
+    }
+
+    // =========================================================================
+    // PSR-7 MessageInterface
+    // =========================================================================
+
     public function getProtocolVersion(): string
     {
-        return $this->response->getProtocolVersion();
+        return $this->protocolVersion;
     }
 
-    /**
-     * Return an instance with the specified HTTP protocol version.
-     *
-     * @param string $version The HTTP protocol version
-     *
-     * @return static A new instance with the given protocol version
-     */
     public function withProtocolVersion(string $version): static
     {
-        return new self($this->response->withProtocolVersion($version));
+        $clone = clone $this;
+        $clone->protocolVersion = $version;
+
+        return $clone;
     }
 
     /**
-     * Retrieve all message header values.
-     *
-     * @return array<string, list<string>> An associative array of headers
+     * @return array<string, list<string>>
      */
     public function getHeaders(): array
     {
-        $headers = $this->response->getHeaders();
         $result = [];
 
-        foreach ($headers as $name => $values) {
-            $result[(string) $name] = array_values($values);
+        foreach ($this->headers as $normalized => $values) {
+            $name = $this->headerNames[$normalized];
+            $result[$name] = $values;
         }
 
         return $result;
     }
 
-    /**
-     * Check if a header exists by the given case-insensitive name.
-     *
-     * @param string $name Case-insensitive header field name
-     *
-     * @return bool True if the header exists
-     */
     public function hasHeader(string $name): bool
     {
-        return $this->response->hasHeader($name);
+        return isset($this->headers[strtolower($name)]);
     }
 
     /**
-     * Retrieve a message header value by the given case-insensitive name.
-     *
-     * @param string $name Case-insensitive header field name
-     *
-     * @return list<string> An array of string values for the header
+     * @return list<string>
      */
     public function getHeader(string $name): array
     {
-        return array_values($this->response->getHeader($name));
+        $normalized = strtolower($name);
+
+        return $this->headers[$normalized] ?? [];
     }
 
-    /**
-     * Retrieve a comma-separated string of the values for a single header.
-     *
-     * @param string $name Case-insensitive header field name
-     *
-     * @return string A concatenated string of header values
-     */
     public function getHeaderLine(string $name): string
     {
-        return $this->response->getHeaderLine($name);
+        return implode(', ', $this->getHeader($name));
     }
 
-    /**
-     * Return an instance with the provided value replacing the specified header.
-     *
-     * @param string $name Case-insensitive header field name
-     * @param string|string[] $value Header value(s)
-     *
-     * @return static A new instance with the given header
-     */
     public function withHeader(string $name, $value): static
     {
-        return new self($this->response->withHeader($name, $value));
+        $normalized = strtolower($name);
+        $clone = clone $this;
+        $clone->headerNames[$normalized] = $name;
+        $clone->headers[$normalized] = is_array($value) ? array_values($value) : [$value];
+
+        return $clone;
     }
 
-    /**
-     * Return an instance with the specified header appended with the given value.
-     *
-     * @param string $name Case-insensitive header field name
-     * @param string|string[] $value Header value(s)
-     *
-     * @return static A new instance with the appended header
-     */
     public function withAddedHeader(string $name, $value): static
     {
-        return new self($this->response->withAddedHeader($name, $value));
+        $normalized = strtolower($name);
+        $clone = clone $this;
+
+        if (!isset($clone->headerNames[$normalized])) {
+            $clone->headerNames[$normalized] = $name;
+            $clone->headers[$normalized] = [];
+        }
+
+        $newValues = is_array($value) ? array_values($value) : [$value];
+        $clone->headers[$normalized] = array_merge($clone->headers[$normalized], $newValues);
+
+        return $clone;
     }
 
-    /**
-     * Return an instance without the specified header.
-     *
-     * @param string $name Case-insensitive header field name
-     *
-     * @return static A new instance without the header
-     */
     public function withoutHeader(string $name): static
     {
-        return new self($this->response->withoutHeader($name));
+        $normalized = strtolower($name);
+        $clone = clone $this;
+        unset($clone->headers[$normalized], $clone->headerNames[$normalized]);
+
+        return $clone;
     }
 
-    /**
-     * Get the body of the message.
-     *
-     * @return StreamInterface The body as a stream
-     */
     public function getBody(): StreamInterface
     {
-        return $this->response->getBody();
+        return $this->body;
     }
 
-    /**
-     * Return an instance with the specified message body.
-     *
-     * @param StreamInterface $body The message body
-     *
-     * @return static A new instance with the given body
-     */
     public function withBody(StreamInterface $body): static
     {
-        return new self($this->response->withBody($body));
-    }
+        $clone = clone $this;
+        $clone->body = $body;
 
-    // =========================================================================
-    // PSR-7 ResponseInterface delegation
-    // =========================================================================
-
-    /**
-     * Get the response status code.
-     *
-     * @return int The status code
-     */
-    public function getStatusCode(): int
-    {
-        return $this->response->getStatusCode();
-    }
-
-    /**
-     * Return an instance with the specified status code and, optionally, reason phrase.
-     *
-     * @param int $code The 3-digit integer result code
-     * @param string $reasonPhrase The reason phrase
-     *
-     * @return static A new instance with the given status
-     */
-    public function withStatus(int $code, string $reasonPhrase = ''): static
-    {
-        return new self($this->response->withStatus($code, $reasonPhrase));
-    }
-
-    /**
-     * Get the response reason phrase.
-     *
-     * @return string The reason phrase
-     */
-    public function getReasonPhrase(): string
-    {
-        return $this->response->getReasonPhrase();
+        return $clone;
     }
 
     // =========================================================================
@@ -217,7 +197,7 @@ final class Response implements ResponseInterface
      */
     public function withCookie(Cookie $cookie): static
     {
-        return new self($this->response->withAddedHeader('Set-Cookie', $cookie->toHeaderString()));
+        return $this->withAddedHeader('Set-Cookie', $cookie->toHeaderString());
     }
 
     /**
@@ -239,7 +219,7 @@ final class Response implements ResponseInterface
             $cookie = $cookie->withDomain($domain);
         }
 
-        return new self($this->response->withAddedHeader('Set-Cookie', $cookie->toHeaderString()));
+        return $this->withAddedHeader('Set-Cookie', $cookie->toHeaderString());
     }
 
     /**
@@ -261,7 +241,7 @@ final class Response implements ResponseInterface
         bool $noStore = false,
     ): static {
         if ($noStore) {
-            return new self($this->response->withHeader('Cache-Control', 'no-store, no-cache'));
+            return $this->withHeader('Cache-Control', 'no-store, no-cache');
         }
 
         $directives = [];
@@ -282,7 +262,7 @@ final class Response implements ResponseInterface
             $directives[] = 'immutable';
         }
 
-        return new self($this->response->withHeader('Cache-Control', implode(', ', $directives)));
+        return $this->withHeader('Cache-Control', implode(', ', $directives));
     }
 
     /**
@@ -297,66 +277,54 @@ final class Response implements ResponseInterface
     {
         $value = $weak ? sprintf('W/"%s"', $etag) : sprintf('"%s"', $etag);
 
-        return new self($this->response->withHeader('ETag', $value));
+        return $this->withHeader('ETag', $value);
     }
 
     /**
      * Check if the response is informational (1xx).
-     *
-     * @return bool True if status is 1xx
      */
     public function isInformational(): bool
     {
-        return $this->response->getStatusCode() >= 100 && $this->response->getStatusCode() < 200;
+        return $this->statusCode >= 100 && $this->statusCode < 200;
     }
 
     /**
      * Check if the response is successful (2xx).
-     *
-     * @return bool True if status is 2xx
      */
     public function isSuccessful(): bool
     {
-        return $this->response->getStatusCode() >= 200 && $this->response->getStatusCode() < 300;
+        return $this->statusCode >= 200 && $this->statusCode < 300;
     }
 
     /**
      * Check if the response is a redirection (3xx).
-     *
-     * @return bool True if status is 3xx
      */
     public function isRedirection(): bool
     {
-        return $this->response->getStatusCode() >= 300 && $this->response->getStatusCode() < 400;
+        return $this->statusCode >= 300 && $this->statusCode < 400;
     }
 
     /**
      * Check if the response is a client error (4xx).
-     *
-     * @return bool True if status is 4xx
      */
     public function isClientError(): bool
     {
-        return $this->response->getStatusCode() >= 400 && $this->response->getStatusCode() < 500;
+        return $this->statusCode >= 400 && $this->statusCode < 500;
     }
 
     /**
      * Check if the response is a server error (5xx).
-     *
-     * @return bool True if status is 5xx
      */
     public function isServerError(): bool
     {
-        return $this->response->getStatusCode() >= 500 && $this->response->getStatusCode() < 600;
+        return $this->statusCode >= 500 && $this->statusCode < 600;
     }
 
     /**
      * Check if the response indicates success (not 4xx or 5xx).
-     *
-     * @return bool True if status is not 4xx or 5xx
      */
     public function isOk(): bool
     {
-        return $this->response->getStatusCode() < 400;
+        return $this->statusCode < 400;
     }
 }

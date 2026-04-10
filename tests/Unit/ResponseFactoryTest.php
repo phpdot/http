@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace PHPdot\Http\Tests\Unit;
 
 use DateTimeImmutable;
-use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
 use PHPdot\Http\Cookie;
 use PHPdot\Http\ResponseFactory;
@@ -19,8 +18,7 @@ final class ResponseFactoryTest extends TestCase
 
     protected function setUp(): void
     {
-        $psr17 = new Psr17Factory();
-        $this->factory = new ResponseFactory($psr17, $psr17);
+        $this->factory = new ResponseFactory();
     }
 
     // --- json() ---
