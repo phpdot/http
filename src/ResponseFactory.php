@@ -18,11 +18,12 @@ namespace PHPdot\Http;
 
 use DateTimeInterface;
 use DateTimeZone;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use RuntimeException;
 
-final class ResponseFactory
+final class ResponseFactory implements ResponseFactoryInterface
 {
     /** @var array<string, string> */
     private const array MIME_TYPES = [
@@ -44,6 +45,19 @@ final class ResponseFactory
         'xls'  => 'application/vnd.ms-excel',
         'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
+
+    /**
+     * Create a new response (PSR-17).
+     *
+     * @param int $code HTTP status code
+     * @param string $reasonPhrase Reason phrase to associate with status code
+     *
+     * @return Response The response
+     */
+    public function createResponse(int $code = 200, string $reasonPhrase = ''): Response
+    {
+        return new Response($code, [], '', '1.1', $reasonPhrase);
+    }
 
     /**
      * Create a JSON response.
