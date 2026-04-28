@@ -66,7 +66,7 @@ final class Cookie
             maxAge: null,
             path: '/',
             domain: '',
-            secure: false,
+            secure: true,
             httpOnly: true,
             sameSite: 'Lax',
             partitioned: false,
@@ -261,10 +261,14 @@ final class Cookie
      *
      * @param string $path The cookie path
      *
+     *
+     * @throws InvalidArgumentException If the path contains control characters
      * @return self A new Cookie instance
      */
     public function withPath(string $path): self
     {
+        self::validateAttributeValue($path, 'path');
+
         return new self(
             name: $this->name,
             value: $this->value,
@@ -284,10 +288,14 @@ final class Cookie
      *
      * @param string $domain The cookie domain
      *
+     *
+     * @throws InvalidArgumentException If the domain contains control characters
      * @return self A new Cookie instance
      */
     public function withDomain(string $domain): self
     {
+        self::validateAttributeValue($domain, 'domain');
+
         return new self(
             name: $this->name,
             value: $this->value,
@@ -307,10 +315,18 @@ final class Cookie
      *
      * @param bool $secure Whether the cookie is secure-only
      *
+     *
+     * @throws InvalidArgumentException If unsetting Secure while SameSite=None or Partitioned is set
      * @return self A new Cookie instance
      */
     public function withSecure(bool $secure): self
     {
+        if (!$secure && ($this->sameSite === 'None' || $this->partitioned)) {
+            throw new InvalidArgumentException(
+                'Cannot remove Secure flag while SameSite=None or Partitioned is set.',
+            );
+        }
+
         return new self(
             name: $this->name,
             value: $this->value,
@@ -521,19 +537,21 @@ final class Cookie
 
                     break;
                 case 'max-age':
-                    if ($attrValue !== null) {
+                    if ($attrValue !== null && ctype_digit(ltrim($attrValue, '-'))) {
                         $maxAge = (int) $attrValue;
                     }
 
                     break;
                 case 'path':
                     if ($attrValue !== null) {
+                        self::validateAttributeValue($attrValue, 'path');
                         $path = $attrValue;
                     }
 
                     break;
                 case 'domain':
                     if ($attrValue !== null) {
+                        self::validateAttributeValue($attrValue, 'domain');
                         $domain = $attrValue;
                     }
 
@@ -548,7 +566,15 @@ final class Cookie
                     break;
                 case 'samesite':
                     if ($attrValue !== null) {
-                        $sameSite = ucfirst(strtolower($attrValue));
+                        $normalized = ucfirst(strtolower($attrValue));
+
+                        if ($normalized !== 'Strict' && $normalized !== 'Lax' && $normalized !== 'None') {
+                            throw new InvalidArgumentException(
+                                sprintf('Invalid SameSite value "%s" in Set-Cookie header.', $attrValue),
+                            );
+                        }
+
+                        $sameSite = $normalized;
                     }
 
                     break;
@@ -557,6 +583,18 @@ final class Cookie
 
                     break;
             }
+        }
+
+        if ($sameSite === 'None' && !$secure) {
+            throw new InvalidArgumentException(
+                'Invalid Set-Cookie header: SameSite=None requires the Secure attribute.',
+            );
+        }
+
+        if ($partitioned && !$secure) {
+            throw new InvalidArgumentException(
+                'Invalid Set-Cookie header: Partitioned requires the Secure attribute.',
+            );
         }
 
         return new self(
@@ -590,6 +628,20 @@ final class Cookie
         if (preg_match('/[\x00-\x1f\x7f()<>@,;:\\\\"\/\[\]?={} \t]/', $name) === 1) {
             throw new InvalidArgumentException(
                 sprintf('Cookie name "%s" contains invalid characters.', $name),
+            );
+        }
+    }
+
+    /**
+     * Validate a cookie attribute value (path, domain) against header injection.
+     *
+     * @throws InvalidArgumentException If the value contains control or whitespace characters
+     */
+    private static function validateAttributeValue(string $value, string $attribute): void
+    {
+        if (preg_match('/[\x00-\x1f\x7f;]/', $value) === 1) {
+            throw new InvalidArgumentException(
+                sprintf('Cookie %s contains invalid characters.', $attribute),
             );
         }
     }

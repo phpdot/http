@@ -30,7 +30,7 @@ final class CookieTest extends TestCase
         self::assertSame('Lax', $cookie->getSameSite());
         self::assertSame('/', $cookie->getPath());
         self::assertSame('', $cookie->getDomain());
-        self::assertFalse($cookie->isSecure());
+        self::assertTrue($cookie->isSecure());
         self::assertFalse($cookie->isPartitioned());
         self::assertNull($cookie->getExpires());
         self::assertNull($cookie->getMaxAge());
@@ -95,7 +95,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_secure_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = Cookie::create('test', 'val')->withSecure(false);
         $new = $cookie->withSecure(true);
 
         self::assertNotSame($cookie, $new);
@@ -200,7 +200,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function same_site_none_without_secure_throws(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = Cookie::create('test', 'val')->withSecure(false);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('SameSite=None requires the Secure attribute.');
@@ -211,7 +211,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function partitioned_without_secure_throws(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = Cookie::create('test', 'val')->withSecure(false);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Partitioned cookies require the Secure attribute.');
