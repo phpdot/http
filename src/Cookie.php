@@ -20,6 +20,8 @@ use InvalidArgumentException;
 
 final class Cookie
 {
+    private static ?CookieConfig $config = null;
+
     /**
      * @param string $name The cookie name
      * @param string $value The cookie value
@@ -46,7 +48,30 @@ final class Cookie
     ) {}
 
     /**
+     * Set the baseline cookie configuration.
+     *
+     * Typically called once at worker boot via `HttpConfig::apply()`. Every
+     * subsequent `Cookie::create()` reads its defaults from this config.
+     */
+    public static function setConfig(CookieConfig $config): void
+    {
+        self::$config = $config;
+    }
+
+    /**
+     * Get the active baseline configuration. Falls back to a hard-coded
+     * safe default if `setConfig()` has never been called.
+     */
+    public static function getConfig(): CookieConfig
+    {
+        return self::$config ??= new CookieConfig();
+    }
+
+    /**
      * Create a new Cookie instance.
+     *
+     * Defaults are taken from the active CookieConfig (see setConfig).
+     * Override per-cookie via the `with*()` setters.
      *
      * @param string $name The cookie name
      * @param string $value The cookie value
@@ -59,17 +84,19 @@ final class Cookie
     {
         self::validateName($name);
 
+        $defaults = self::getConfig();
+
         return new self(
             name: $name,
             value: $value,
             expires: null,
             maxAge: null,
-            path: '/',
-            domain: '',
-            secure: true,
-            httpOnly: true,
-            sameSite: 'Lax',
-            partitioned: false,
+            path: $defaults->path,
+            domain: $defaults->domain,
+            secure: $defaults->secure,
+            httpOnly: $defaults->httpOnly,
+            sameSite: $defaults->sameSite,
+            partitioned: $defaults->partitioned,
         );
     }
 
