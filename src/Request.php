@@ -58,6 +58,17 @@ final class Request implements ServerRequestInterface
     }
 
     /**
+     * Configure trusted proxies from an HttpConfig DTO.
+     *
+     * Convenience wrapper over `setTrustedProxies()` that keeps app
+     * bootstraps config-driven instead of inlining raw values.
+     */
+    public static function initFromConfig(HttpConfig $config): void
+    {
+        self::setTrustedProxies($config->trustedProxies, $config->trustedHeaders);
+    }
+
+    /**
      * Get the list of trusted proxy IP addresses.
      *
      * @return list<string> The trusted proxy IPs or CIDR ranges

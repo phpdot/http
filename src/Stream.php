@@ -29,8 +29,6 @@ final class Stream implements StreamInterface
 
     private bool $writable;
 
-    private ?int $size;
-
     /**
      * @param resource $resource A PHP stream resource
      */
@@ -49,15 +47,12 @@ final class Stream implements StreamInterface
         $this->readable = str_contains($mode, 'r') || str_contains($mode, '+');
         $this->writable = str_contains($mode, 'w') || str_contains($mode, 'a')
             || str_contains($mode, 'x') || str_contains($mode, 'c') || str_contains($mode, '+');
-
-        $stat = fstat($resource);
-        $this->size = $stat !== false ? $stat['size'] : null;
     }
 
     /**
-     * Create a stream from a string, resource, or existing StreamInterface.
+     * Create a stream from a string or existing StreamInterface.
      *
-     * @param string|resource|StreamInterface $body The body content
+     * @param string|StreamInterface $body The body content
      *
      * @return self The stream instance
      */
@@ -133,7 +128,6 @@ final class Stream implements StreamInterface
         $this->seekable = false;
         $this->readable = false;
         $this->writable = false;
-        $this->size = null;
 
         return $resource;
     }
@@ -180,6 +174,10 @@ final class Stream implements StreamInterface
 
     public function seek(int $offset, int $whence = SEEK_SET): void
     {
+        if ($this->resource === null) {
+            throw new RuntimeException('Stream is detached');
+        }
+
         if (!$this->seekable) {
             throw new RuntimeException('Stream is not seekable');
         }
@@ -201,11 +199,14 @@ final class Stream implements StreamInterface
 
     public function write(string $string): int
     {
+        if ($this->resource === null) {
+            throw new RuntimeException('Stream is detached');
+        }
+
         if (!$this->writable) {
             throw new RuntimeException('Stream is not writable');
         }
 
-        $this->size = null;
         $result = fwrite($this->resource, $string);
 
         if ($result === false) {
@@ -222,8 +223,16 @@ final class Stream implements StreamInterface
 
     public function read(int $length): string
     {
+        if ($this->resource === null) {
+            throw new RuntimeException('Stream is detached');
+        }
+
         if (!$this->readable) {
             throw new RuntimeException('Stream is not readable');
+        }
+
+        if ($length < 1) {
+            throw new RuntimeException('Read length must be positive');
         }
 
         $result = fread($this->resource, $length);
@@ -250,9 +259,6 @@ final class Stream implements StreamInterface
         return $contents;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function getMetadata(?string $key = null): mixed
     {
         if ($this->resource === null) {

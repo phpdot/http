@@ -14,7 +14,6 @@ declare(strict_types=1);
 
 namespace PHPdot\Http;
 
-use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 

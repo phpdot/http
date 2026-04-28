@@ -17,10 +17,14 @@
         "psr/http-message": "^2.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.0",
+        "friendsofphp/php-cs-fixer": "^3.94",
+        "phpdot/container": "^1.5",
         "phpstan/phpstan": "^2.0",
         "phpstan/phpstan-strict-rules": "^2.0",
-        "friendsofphp/php-cs-fixer": "^3.94"
+        "phpunit/phpunit": "^11.0"
+    },
+    "suggest": {
+        "phpdot/container": "Required for auto-wiring HttpConfig and ResponseFactory's PSR-17 interfaces via the framework's manifest scanner. The lifecycle attributes are inert at runtime; standalone consumers don't need it installed."
     },
     "autoload": {
         "psr-4": {

@@ -21,6 +21,8 @@ namespace PHPdot\Http;
 use DateTimeInterface;
 use DateTimeZone;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use PHPdot\Container\Attribute\Binds;
+use PHPdot\Container\Attribute\Singleton;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
@@ -33,6 +35,12 @@ use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Message\UriInterface;
 use RuntimeException;
 
+#[Singleton]
+#[Binds(ResponseFactoryInterface::class)]
+#[Binds(ServerRequestFactoryInterface::class)]
+#[Binds(StreamFactoryInterface::class)]
+#[Binds(UriFactoryInterface::class)]
+#[Binds(UploadedFileFactoryInterface::class)]
 final class ResponseFactory implements
     ResponseFactoryInterface,
     ServerRequestFactoryInterface,
@@ -90,7 +98,7 @@ final class ResponseFactory implements
      *
      * @param string $method The HTTP method
      * @param UriInterface|string $uri The URI
-     * @param array<string, mixed> $serverParams Server parameters
+     * @param array<array-key, mixed> $serverParams Server parameters
      */
     public function createServerRequest(string $method, $uri, array $serverParams = []): ServerRequestInterface
     {
