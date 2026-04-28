@@ -18,13 +18,22 @@ final class IpUtils
 {
     /** @var list<string> */
     private const array PRIVATE_RANGES = [
-        '10.0.0.0/8',
-        '172.16.0.0/12',
-        '192.168.0.0/16',
-        '127.0.0.0/8',
-        '::1/128',
-        'fc00::/7',
+        '127.0.0.0/8',     // RFC1700 loopback
+        '10.0.0.0/8',      // RFC1918
+        '172.16.0.0/12',   // RFC1918
+        '192.168.0.0/16',  // RFC1918
+        '169.254.0.0/16',  // RFC3927 link-local
+        '0.0.0.0/8',       // RFC5735 unspecified
+        '240.0.0.0/4',     // RFC1112 reserved
+        '::1/128',         // IPv6 loopback
+        'fc00::/7',        // RFC4193 unique local
+        'fe80::/10',       // IPv6 link-local
+        '::ffff:0:0/96',   // IPv4-mapped IPv6
+        '::/128',          // IPv6 unspecified
     ];
+
+    /** @var array<string, bool> Memoized inRange() results */
+    private static array $cache = [];
 
     /**
      * Check if an IP address falls within a CIDR range.
@@ -36,40 +45,13 @@ final class IpUtils
      */
     public static function inRange(string $ip, string $cidr): bool
     {
-        $packedIp = inet_pton($ip);
+        $cacheKey = $ip . '|' . $cidr;
 
-        if ($packedIp === false) {
-            return false;
+        if (array_key_exists($cacheKey, self::$cache)) {
+            return self::$cache[$cacheKey];
         }
 
-        if (str_contains($cidr, '/')) {
-            [$network, $prefixStr] = explode('/', $cidr, 2);
-            $prefix = (int) $prefixStr;
-        } else {
-            $network = $cidr;
-            $prefix = self::isIPv6($cidr) ? 128 : 32;
-        }
-
-        $packedNetwork = inet_pton($network);
-
-        if ($packedNetwork === false) {
-            return false;
-        }
-
-        if (strlen($packedIp) !== strlen($packedNetwork)) {
-            return false;
-        }
-
-        $byteLength = strlen($packedIp);
-        $totalBits = $byteLength * 8;
-
-        if ($prefix < 0 || $prefix > $totalBits) {
-            return false;
-        }
-
-        $mask = self::buildNetmask($prefix, $byteLength);
-
-        return ($packedIp & $mask) === ($packedNetwork & $mask);
+        return self::$cache[$cacheKey] = self::compute($ip, $cidr);
     }
 
     /**
@@ -94,7 +76,8 @@ final class IpUtils
     /**
      * Check if an IP address is a private/reserved address.
      *
-     * Checks against RFC 1918 (IPv4), RFC 4193 (IPv6), and loopback ranges.
+     * Checks against RFC 1918 (IPv4), RFC 4193 (IPv6), loopback ranges,
+     * link-local ranges, IPv4-mapped IPv6, and unspecified addresses.
      *
      * @param string $ip The IP address to check
      *
@@ -130,12 +113,64 @@ final class IpUtils
     }
 
     /**
+     * Clear the memoization cache. Use between unrelated request cycles
+     * if the cache size becomes a concern (long-running workers).
+     */
+    public static function clearCache(): void
+    {
+        self::$cache = [];
+    }
+
+    /**
+     * Compute the actual CIDR membership check (uncached).
+     */
+    private static function compute(string $ip, string $cidr): bool
+    {
+        $packedIp = inet_pton($ip);
+
+        if ($packedIp === false) {
+            return false;
+        }
+
+        if (str_contains($cidr, '/')) {
+            [$network, $prefixStr] = explode('/', $cidr, 2);
+
+            if ($prefixStr === '' || ctype_digit($prefixStr) === false) {
+                // Empty / non-numeric prefix is not a valid CIDR. Without this
+                // guard, "1.2.3.4/" would coerce to prefix=0 and match every IP.
+                return false;
+            }
+
+            $prefix = (int) $prefixStr;
+        } else {
+            $network = $cidr;
+            $prefix = self::isIPv6($cidr) ? 128 : 32;
+        }
+
+        $packedNetwork = inet_pton($network);
+
+        if ($packedNetwork === false) {
+            return false;
+        }
+
+        if (strlen($packedIp) !== strlen($packedNetwork)) {
+            return false;
+        }
+
+        $byteLength = strlen($packedIp);
+        $totalBits = $byteLength * 8;
+
+        if ($prefix < 0 || $prefix > $totalBits) {
+            return false;
+        }
+
+        $mask = self::buildNetmask($prefix, $byteLength);
+
+        return ($packedIp & $mask) === ($packedNetwork & $mask);
+    }
+
+    /**
      * Build a binary netmask from a prefix length.
-     *
-     * @param int $prefix The prefix length in bits
-     * @param int $byteLength The total byte length (4 for IPv4, 16 for IPv6)
-     *
-     * @return string The binary netmask
      */
     private static function buildNetmask(int $prefix, int $byteLength): string
     {
@@ -147,8 +182,6 @@ final class IpUtils
             $mask .= chr(0xff << (8 - $remainder) & 0xff);
         }
 
-        $mask = str_pad($mask, $byteLength, "\x00");
-
-        return $mask;
+        return str_pad($mask, $byteLength, "\x00");
     }
 }
