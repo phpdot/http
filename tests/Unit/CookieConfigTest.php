@@ -4,22 +4,16 @@ declare(strict_types=1);
 
 namespace PHPdot\Http\Tests\Unit;
 
-use PHPdot\Http\Cookie;
+use Nyholm\Psr7\ServerRequest;
 use PHPdot\Http\CookieConfig;
 use PHPdot\Http\HttpConfig;
 use PHPdot\Http\Request;
+use PHPdot\Http\ResponseFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 final class CookieConfigTest extends TestCase
 {
-    protected function tearDown(): void
-    {
-        // Reset to a fresh baseline so cross-test state doesn't leak.
-        Cookie::setConfig(new CookieConfig());
-        Request::setTrustedProxies([], 0);
-    }
-
     #[Test]
     public function defaultsAreSensible(): void
     {
@@ -54,16 +48,18 @@ final class CookieConfigTest extends TestCase
     }
 
     #[Test]
-    public function cookieCreateReadsDefaultsFromConfig(): void
+    public function responseFactoryCookieReadsDefaultsFromHttpConfig(): void
     {
-        Cookie::setConfig(new CookieConfig(
-            secure: false,
-            sameSite: 'Strict',
-            path: '/admin',
-            domain: '.example.com',
+        $factory = new ResponseFactory(new HttpConfig(
+            cookie: new CookieConfig(
+                secure: false,
+                sameSite: 'Strict',
+                path: '/admin',
+                domain: '.example.com',
+            ),
         ));
 
-        $cookie = Cookie::create('session', 'abc');
+        $cookie = $factory->cookie('session', 'abc');
 
         self::assertFalse($cookie->isSecure());
         self::assertSame('Strict', $cookie->getSameSite());
@@ -73,14 +69,11 @@ final class CookieConfigTest extends TestCase
     }
 
     #[Test]
-    public function cookieCreateUsesSafeDefaultsWithoutSetConfig(): void
+    public function responseFactoryCookieUsesSafeDefaultsWithoutInjection(): void
     {
-        // Force unconfigured state by giving setConfig a fresh instance,
-        // then resetting the static via reflection isn't needed — getConfig()
-        // returns whatever we set, so a baseline CookieConfig() suffices.
-        Cookie::setConfig(new CookieConfig());
+        $factory = new ResponseFactory();
 
-        $cookie = Cookie::create('default', 'val');
+        $cookie = $factory->cookie('default', 'val');
 
         self::assertTrue($cookie->isSecure());
         self::assertTrue($cookie->isHttpOnly());
@@ -88,37 +81,31 @@ final class CookieConfigTest extends TestCase
     }
 
     #[Test]
-    public function withSecureFalseStillWorksWhenBaselineIsSecure(): void
+    public function withSecureFalseStillWorksOnFactoryDefault(): void
     {
-        Cookie::setConfig(new CookieConfig(secure: true));
+        $factory = new ResponseFactory(new HttpConfig(
+            cookie: new CookieConfig(secure: true),
+        ));
 
-        $cookie = Cookie::create('dev', 'val')->withSecure(false);
+        $cookie = $factory->cookie('dev', 'val')->withSecure(false);
 
         self::assertFalse($cookie->isSecure());
     }
 
     #[Test]
-    public function httpConfigApplyWiresBothRequestAndCookie(): void
+    public function requestReadsTrustedProxiesFromInjectedConfig(): void
     {
         $config = new HttpConfig(
             trustedProxies: ['10.0.0.0/8'],
             trustedHeaders: Request::HEADER_X_FORWARDED_ALL,
-            cookie: new CookieConfig(
-                secure: false,
-                sameSite: 'Strict',
-                domain: '.example.com',
-            ),
         );
 
-        HttpConfig::apply($config);
+        $inner = (new ServerRequest('GET', '/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
+            ->withHeader('X-Forwarded-For', '203.0.113.50');
 
-        self::assertSame(['10.0.0.0/8'], Request::getTrustedProxies());
-        self::assertSame(Request::HEADER_X_FORWARDED_ALL, Request::getTrustedHeaders());
+        $request = new Request($inner, $config);
 
-        $cookie = Cookie::create('s', 'v');
-        self::assertFalse($cookie->isSecure());
-        self::assertSame('Strict', $cookie->getSameSite());
-        self::assertSame('.example.com', $cookie->getDomain());
+        self::assertSame('203.0.113.50', $request->ip());
     }
 
     #[Test]
@@ -127,5 +114,16 @@ final class CookieConfigTest extends TestCase
         $http = new HttpConfig();
 
         self::assertEquals(new CookieConfig(), $http->cookie);
+    }
+
+    #[Test]
+    public function defaultCookieFromFactoryIsSessionScoped(): void
+    {
+        $factory = new ResponseFactory();
+
+        $cookie = $factory->cookie('flash', 'msg');
+
+        self::assertNull($cookie->getExpires());
+        self::assertNull($cookie->getMaxAge());
     }
 }

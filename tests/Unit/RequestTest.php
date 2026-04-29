@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Nyholm\Psr7\ServerRequest;
 use Nyholm\Psr7\UploadedFile;
 use Nyholm\Psr7\Uri;
+use PHPdot\Http\HttpConfig;
 use PHPdot\Http\Request;
 use PHPdot\Http\Tests\Stubs\Color;
 use PHPUnit\Framework\Attributes\Test;
@@ -15,11 +16,6 @@ use PHPUnit\Framework\TestCase;
 
 final class RequestTest extends TestCase
 {
-    protected function tearDown(): void
-    {
-        Request::setTrustedProxies([], 0);
-    }
-
     // --- PSR-7 delegation ---
 
     #[Test]
@@ -836,11 +832,10 @@ final class RequestTest extends TestCase
     #[Test]
     public function ip_with_trusted_proxy_and_x_forwarded_for(): void
     {
-        Request::setTrustedProxies(['10.0.0.1'], Request::HEADER_X_FORWARDED_FOR);
-
+        $config = new HttpConfig(trustedProxies: ['10.0.0.1'], trustedHeaders: Request::HEADER_X_FORWARDED_FOR);
         $inner = (new ServerRequest('GET', '/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-For', '203.0.113.50, 10.0.0.1');
-        $request = new Request($inner);
+        $request = new Request($inner, $config);
 
         self::assertSame('203.0.113.50', $request->ip());
     }
@@ -858,11 +853,10 @@ final class RequestTest extends TestCase
     #[Test]
     public function scheme_with_trusted_proxy(): void
     {
-        Request::setTrustedProxies(['10.0.0.1'], Request::HEADER_X_FORWARDED_PROTO);
-
+        $config = new HttpConfig(trustedProxies: ['10.0.0.1'], trustedHeaders: Request::HEADER_X_FORWARDED_PROTO);
         $inner = (new ServerRequest('GET', 'http://example.com/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-Proto', 'https');
-        $request = new Request($inner);
+        $request = new Request($inner, $config);
 
         self::assertSame('https', $request->scheme());
     }
@@ -870,11 +864,10 @@ final class RequestTest extends TestCase
     #[Test]
     public function host_with_trusted_proxy(): void
     {
-        Request::setTrustedProxies(['10.0.0.1'], Request::HEADER_X_FORWARDED_HOST);
-
+        $config = new HttpConfig(trustedProxies: ['10.0.0.1'], trustedHeaders: Request::HEADER_X_FORWARDED_HOST);
         $inner = (new ServerRequest('GET', 'http://internal.local/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-Host', 'example.com');
-        $request = new Request($inner);
+        $request = new Request($inner, $config);
 
         self::assertSame('example.com', $request->host());
     }
@@ -882,11 +875,10 @@ final class RequestTest extends TestCase
     #[Test]
     public function is_secure_with_trusted_proxy(): void
     {
-        Request::setTrustedProxies(['10.0.0.1'], Request::HEADER_X_FORWARDED_PROTO);
-
+        $config = new HttpConfig(trustedProxies: ['10.0.0.1'], trustedHeaders: Request::HEADER_X_FORWARDED_PROTO);
         $inner = (new ServerRequest('GET', 'http://example.com/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-Proto', 'https');
-        $request = new Request($inner);
+        $request = new Request($inner, $config);
 
         self::assertTrue($request->isSecure());
     }
@@ -1243,17 +1235,6 @@ final class RequestTest extends TestCase
         self::assertFalse($request->accepts(['application/xml', 'application/json']));
     }
 
-    // --- trusted proxy getters ---
-
-    #[Test]
-    public function get_trusted_proxies_and_headers(): void
-    {
-        Request::setTrustedProxies(['10.0.0.1'], Request::HEADER_X_FORWARDED_ALL);
-
-        self::assertSame(['10.0.0.1'], Request::getTrustedProxies());
-        self::assertSame(Request::HEADER_X_FORWARDED_ALL, Request::getTrustedHeaders());
-    }
-
     // --- isMethod() ---
 
     #[Test]
@@ -1299,19 +1280,17 @@ final class RequestTest extends TestCase
     #[Test]
     public function ips_returns_forwarded_chain(): void
     {
-        Request::setTrustedProxies(['10.0.0.0/8'], Request::HEADER_X_FORWARDED_ALL);
+        $config = new HttpConfig(trustedProxies: ['10.0.0.0/8'], trustedHeaders: Request::HEADER_X_FORWARDED_ALL);
         $inner = (new ServerRequest('GET', '/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-For', '203.0.113.50, 198.51.100.1');
-        $request = new Request($inner);
+        $request = new Request($inner, $config);
 
         self::assertSame(['203.0.113.50', '198.51.100.1'], $request->ips());
-        Request::setTrustedProxies([], 0);
     }
 
     #[Test]
     public function ips_ignores_forwarded_for_without_trusted_proxy(): void
     {
-        Request::setTrustedProxies([], 0);
         $inner = (new ServerRequest('GET', '/', [], null, '1.1', ['REMOTE_ADDR' => '203.0.113.50']))
             ->withHeader('X-Forwarded-For', '10.0.0.1, 192.168.1.1');
         $request = new Request($inner);
@@ -1333,11 +1312,10 @@ final class RequestTest extends TestCase
     #[Test]
     public function port_with_trusted_proxy(): void
     {
-        Request::setTrustedProxies(['10.0.0.1'], Request::HEADER_X_FORWARDED_PORT);
-
+        $config = new HttpConfig(trustedProxies: ['10.0.0.1'], trustedHeaders: Request::HEADER_X_FORWARDED_PORT);
         $inner = (new ServerRequest('GET', 'http://example.com/', [], null, '1.1', ['REMOTE_ADDR' => '10.0.0.1']))
             ->withHeader('X-Forwarded-Port', '443');
-        $request = new Request($inner);
+        $request = new Request($inner, $config);
 
         self::assertSame(443, $request->port());
     }

@@ -71,9 +71,35 @@ final class ResponseFactory implements
 
     private readonly Psr17Factory $psr17;
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly HttpConfig $config = new HttpConfig(),
+    ) {
         $this->psr17 = new Psr17Factory();
+    }
+
+    /**
+     * Build a Cookie pre-populated with the app-wide defaults from `config/http.php`'s
+     * `cookie` block (delivered via the injected HttpConfig). Override individual fields
+     * with the Cookie's `with*()` chain.
+     *
+     * Defaults to a session cookie (no Expires/Max-Age). Use `withMaxAge()` or
+     * `withExpires()` for a long-lived cookie.
+     *
+     * @param string $name The cookie name
+     * @param string $value The cookie value
+     */
+    public function cookie(string $name, string $value = ''): Cookie
+    {
+        return new Cookie(
+            name: $name,
+            value: $value,
+            path: $this->config->cookie->path,
+            domain: $this->config->cookie->domain,
+            secure: $this->config->cookie->secure,
+            httpOnly: $this->config->cookie->httpOnly,
+            sameSite: $this->config->cookie->sameSite,
+            partitioned: $this->config->cookie->partitioned,
+        );
     }
 
     // =========================================================================
@@ -615,13 +641,13 @@ final class ResponseFactory implements
         string $path = '/',
         string $domain = '',
     ): ResponseInterface {
-        $cookie = Cookie::create($name, '')
-            ->withPath($path)
-            ->withMaxAge(-1);
-
-        if ($domain !== '') {
-            $cookie = $cookie->withDomain($domain);
-        }
+        $cookie = new Cookie(
+            name: $name,
+            value: '',
+            maxAge: -1,
+            path: $path,
+            domain: $domain,
+        );
 
         return $response->withAddedHeader('Set-Cookie', $cookie->toHeaderString());
     }

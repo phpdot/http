@@ -425,7 +425,7 @@ final class ResponseFactoryTest extends TestCase
     public function with_cookie_adds_set_cookie_header(): void
     {
         $response = $this->factory->raw(200);
-        $cookie = Cookie::create('sid', 'abc123');
+        $cookie = new Cookie('sid', 'abc123');
         $result = $this->factory->withCookie($response, $cookie);
 
         $header = $result->getHeaderLine('Set-Cookie');

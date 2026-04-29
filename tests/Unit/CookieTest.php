@@ -15,7 +15,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function create_with_name_and_value(): void
     {
-        $cookie = Cookie::create('session', 'abc123');
+        $cookie = new Cookie('session', 'abc123');
 
         self::assertSame('session', $cookie->getName());
         self::assertSame('abc123', $cookie->getValue());
@@ -24,7 +24,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function default_values(): void
     {
-        $cookie = Cookie::create('test', 'value');
+        $cookie = new Cookie('test', 'value');
 
         self::assertTrue($cookie->isHttpOnly());
         self::assertSame('Lax', $cookie->getSameSite());
@@ -39,7 +39,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_value_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'old');
+        $cookie = new Cookie('test', 'old');
         $new = $cookie->withValue('new');
 
         self::assertNotSame($cookie, $new);
@@ -50,7 +50,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_expires_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
         $date = new DateTimeImmutable('2030-01-01');
         $new = $cookie->withExpires($date);
 
@@ -62,7 +62,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_max_age_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
         $new = $cookie->withMaxAge(3600);
 
         self::assertNotSame($cookie, $new);
@@ -73,7 +73,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_path_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
         $new = $cookie->withPath('/admin');
 
         self::assertNotSame($cookie, $new);
@@ -84,7 +84,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_domain_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
         $new = $cookie->withDomain('.example.com');
 
         self::assertNotSame($cookie, $new);
@@ -95,7 +95,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_secure_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val')->withSecure(false);
+        $cookie = new Cookie('test', 'val')->withSecure(false);
         $new = $cookie->withSecure(true);
 
         self::assertNotSame($cookie, $new);
@@ -106,7 +106,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_http_only_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
         $new = $cookie->withHttpOnly(false);
 
         self::assertNotSame($cookie, $new);
@@ -117,7 +117,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_same_site_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val')->withSecure(true);
+        $cookie = new Cookie('test', 'val')->withSecure(true);
         $new = $cookie->withSameSite('None');
 
         self::assertNotSame($cookie, $new);
@@ -128,7 +128,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function with_partitioned_returns_new_instance(): void
     {
-        $cookie = Cookie::create('test', 'val')->withSecure(true);
+        $cookie = new Cookie('test', 'val')->withSecure(true);
         $new = $cookie->withPartitioned(true);
 
         self::assertNotSame($cookie, $new);
@@ -140,7 +140,7 @@ final class CookieTest extends TestCase
     public function to_header_string_contains_all_attributes(): void
     {
         $expires = new DateTimeImmutable('2030-06-15 12:00:00 UTC');
-        $cookie = Cookie::create('sid', 'xyz')
+        $cookie = new Cookie('sid', 'xyz')
             ->withPath('/app')
             ->withDomain('.example.com')
             ->withMaxAge(7200)
@@ -164,7 +164,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function to_header_string_contains_partitioned(): void
     {
-        $cookie = Cookie::create('sid', 'xyz')
+        $cookie = new Cookie('sid', 'xyz')
             ->withSecure(true)
             ->withPartitioned(true);
 
@@ -176,7 +176,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function from_header_string_round_trips(): void
     {
-        $original = Cookie::create('token', 'abc 123')
+        $original = new Cookie('token', 'abc 123')
             ->withPath('/api')
             ->withDomain('.example.com')
             ->withMaxAge(3600)
@@ -200,7 +200,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function same_site_none_without_secure_throws(): void
     {
-        $cookie = Cookie::create('test', 'val')->withSecure(false);
+        $cookie = new Cookie('test', 'val')->withSecure(false);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('SameSite=None requires the Secure attribute.');
@@ -211,7 +211,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function partitioned_without_secure_throws(): void
     {
-        $cookie = Cookie::create('test', 'val')->withSecure(false);
+        $cookie = new Cookie('test', 'val')->withSecure(false);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Partitioned cookies require the Secure attribute.');
@@ -224,7 +224,7 @@ final class CookieTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        Cookie::create('bad name', 'val');
+        new Cookie('bad name', 'val');
     }
 
     #[Test]
@@ -233,13 +233,13 @@ final class CookieTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cookie name must not be empty.');
 
-        Cookie::create('', 'val');
+        new Cookie('', 'val');
     }
 
     #[Test]
     public function invalid_same_site_value_throws(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid SameSite value');
@@ -250,7 +250,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function is_expired_for_past_date(): void
     {
-        $cookie = Cookie::create('test', 'val')
+        $cookie = new Cookie('test', 'val')
             ->withExpires(new DateTimeImmutable('2000-01-01'));
 
         self::assertTrue($cookie->isExpired());
@@ -259,7 +259,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function is_not_expired_for_future_date(): void
     {
-        $cookie = Cookie::create('test', 'val')
+        $cookie = new Cookie('test', 'val')
             ->withExpires(new DateTimeImmutable('2099-01-01'));
 
         self::assertFalse($cookie->isExpired());
@@ -268,7 +268,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function is_not_expired_for_session_cookie(): void
     {
-        $cookie = Cookie::create('test', 'val');
+        $cookie = new Cookie('test', 'val');
 
         self::assertFalse($cookie->isExpired());
     }
@@ -284,7 +284,7 @@ final class CookieTest extends TestCase
     #[Test]
     public function value_is_url_encoded_in_header(): void
     {
-        $cookie = Cookie::create('test', 'hello world');
+        $cookie = new Cookie('test', 'hello world');
         $header = $cookie->toHeaderString();
 
         self::assertStringContainsString('test=hello%20world', $header);
