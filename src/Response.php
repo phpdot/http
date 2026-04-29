@@ -210,13 +210,13 @@ class Response implements ResponseInterface
      */
     public function withoutCookie(string $name, string $path = '/', string $domain = ''): static
     {
-        $cookie = Cookie::create($name, '')
-            ->withPath($path)
-            ->withMaxAge(-1);
-
-        if ($domain !== '') {
-            $cookie = $cookie->withDomain($domain);
-        }
+        $cookie = new Cookie(
+            name: $name,
+            value: '',
+            maxAge: -1,
+            path: $path,
+            domain: $domain,
+        );
 
         return $this->withAddedHeader('Set-Cookie', $cookie->toHeaderString());
     }

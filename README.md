@@ -147,14 +147,18 @@ $request->isPrefetch();                   // Purpose/Sec-Purpose: prefetch
 
 ### Trusted Proxies
 
-Configure once at boot:
+Configure via `HttpConfig` and pass it into the `Request` constructor:
 
 ```php
-Request::setTrustedProxies(
-    ['10.0.0.0/8', '172.16.0.0/12'],
-    Request::HEADER_X_FORWARDED_ALL,
+$config = new HttpConfig(
+    trustedProxies: ['10.0.0.0/8', '172.16.0.0/12'],
+    trustedHeaders: Request::HEADER_X_FORWARDED_ALL,
 );
+
+$request = new Request($psr7, $config);
 ```
+
+Inside a phpdot/container application, `HttpConfig` is hydrated from `config/http.php` and `ResponseFactory` (and any other DI consumers) get it injected automatically. The boundary code that builds `Request` from raw input passes the same `HttpConfig` to its constructor.
 
 After configuration, `ip()`, `scheme()`, `host()`, `port()`, `isSecure()` automatically read from forwarded headers when the request comes through a trusted proxy.
 
@@ -271,18 +275,37 @@ if ($factory->isNotModified($request->psr(), $response)) {
 
 ### Cookies
 
-```php
-use PHPdot\Http\Cookie;
+`ResponseFactory::cookie()` produces a Cookie pre-populated with defaults from the injected `HttpConfig`'s `cookie` block (configured via `config/http.php`). Override individual fields with the Cookie's `with*()` chain.
 
-$cookie = Cookie::create('session', $token)
-    ->withPath('/')
-    ->withSecure()
-    ->withHttpOnly()
-    ->withSameSite('Lax')
-    ->withMaxAge(3600);
+```php
+// Session cookie — defaults applied (secure, httpOnly, sameSite from CookieConfig)
+$cookie = $factory->cookie('session', $token);
+
+// Long-lived cookie — explicit max-age
+$cookie = $factory->cookie('remember', $token)
+    ->withMaxAge(86400 * 30);
+
+// Override defaults per-cookie when needed
+$cookie = $factory->cookie('csrf', $csrfToken)
+    ->withSameSite('Strict');
 
 $response = $factory->withCookie($response, $cookie);
 $response = $factory->withoutCookie($response, 'old_session');
+```
+
+Defaults come from `config/http.php`:
+
+```php
+return [
+    'cookie' => [
+        'secure'      => true,
+        'httpOnly'    => true,
+        'sameSite'    => 'Lax',
+        'path'        => '/',
+        'domain'      => '',
+        'partitioned' => false,
+    ],
+];
 ```
 
 ### Problem Details (RFC 9457)
@@ -301,16 +324,28 @@ $factory->problem(
 
 ## Cookie
 
-Immutable value object. Builds and parses Set-Cookie headers per RFC 6265.
+Pure immutable value object. Builds and parses Set-Cookie headers per RFC 6265.
 
 ```php
 use PHPdot\Http\Cookie;
 
-$cookie = Cookie::create('session', 'abc123')
-    ->withPath('/')
+// Direct construction — uses safe defaults: secure=true, httpOnly=true, sameSite=Lax, path='/'
+$cookie = new Cookie('session', 'abc123');
+
+// All attributes explicit
+$cookie = new Cookie(
+    name:     'session',
+    value:    'abc123',
+    path:     '/',
+    domain:   '.example.com',
+    secure:   true,
+    httpOnly: true,
+    sameSite: 'Strict',
+);
+
+// Builder chain on top
+$cookie = (new Cookie('session', 'abc123'))
     ->withDomain('.example.com')
-    ->withSecure()
-    ->withHttpOnly()
     ->withSameSite('Strict')
     ->withMaxAge(86400);
 
@@ -328,6 +363,8 @@ $cookie->isSecure();       // true
 $cookie->isHttpOnly();     // true
 $cookie->isExpired();      // false
 ```
+
+For app-wide defaults from `config/http.php`, prefer `ResponseFactory::cookie()` (above).
 
 ### Validation
 
@@ -503,7 +540,7 @@ return [
 
 ### `CookieConfig` — baseline cookie defaults
 
-Every `Cookie::create()` call reads its defaults from the active `CookieConfig`. Apps configure once; per-cookie deviations use `withSecure()`, `withHttpOnly()`, etc. as usual.
+Every `ResponseFactory::cookie()` call reads its defaults from the injected `HttpConfig`'s nested `CookieConfig`. Apps configure once in `config/http.php`; per-cookie deviations use Cookie's `with*()` chain as usual.
 
 | Field | Type | Default |
 |---|---|---|
@@ -552,15 +589,20 @@ CloudFlare populates `X-Forwarded-For`, so `HEADER_X_FORWARDED_ALL` is the right
 
 ### Bootstrap pattern
 
-In your worker boot, after the container is built:
+`HttpConfig` flows entirely through DI — no boot hook to call. The container resolves `HttpConfig` from `config/http.php`, injects it into `ResponseFactory` (so `cookie()` reads its defaults) and into the boundary code that builds `Request` instances (so `ip()`, `scheme()`, etc. respect trusted proxies). Zero static state, no `apply()` step.
 
 ```php
-use PHPdot\Http\HttpConfig;
+// Worker boot
+$container = (new ContainerBuilder())
+    ->addDefinitionsFromFile(vendor('phpdot/definitions.php'))
+    ->build();
 
-HttpConfig::apply($container->get(HttpConfig::class));
+// Per request — boundary code
+$psr7    = (new ServerRequestCreator(...))->fromGlobals();
+$request = new Request($psr7, $container->get(HttpConfig::class));
+
+// Or get HttpConfig injected into RequestFactory / your dispatcher
 ```
-
-`HttpConfig::apply()` is the umbrella: it calls `Request::setTrustedProxies()` and `Cookie::setConfig()` from one DTO. The lower-level statics (`Request::setTrustedProxies()`, `Cookie::setConfig()`) remain available for apps that prefer to wire the pieces by hand.
 
 ### `ResponseFactory` — auto-bound to all 5 PSR-17 interfaces
 
@@ -578,11 +620,20 @@ So injecting any of those interfaces in your controllers / services resolves to 
 
 ### Standalone usage (without phpdot framework)
 
-The lifecycle attributes are inert at runtime — `phpdot/container` is a `require-dev` dependency only. If you use `phpdot/http` standalone (no DI container), nothing changes from before:
+The lifecycle attributes are inert at runtime — `phpdot/container` is a `require-dev` dependency only. Without DI, just instantiate `ResponseFactory` and `Request` directly. Both accept an optional `HttpConfig` parameter and default to safe values when omitted:
 
 ```php
+$config = new HttpConfig(
+    trustedProxies: ['10.0.0.0/8'],
+    trustedHeaders: Request::HEADER_X_FORWARDED_ALL,
+);
+
+$factory = new ResponseFactory($config);
+$request = new Request($psr7, $config);
+
+// Or, with no config at all — sensible defaults are baked into HttpConfig and CookieConfig
 $factory = new ResponseFactory();
-Request::setTrustedProxies(['10.0.0.0/8'], Request::HEADER_X_FORWARDED_ALL);
+$request = new Request($psr7);
 ```
 
 The auto-binding only activates when the framework's manifest scanner reads the attributes.

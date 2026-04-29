@@ -20,8 +20,6 @@ use InvalidArgumentException;
 
 final class Cookie
 {
-    private static ?CookieConfig $config = null;
-
     /**
      * @param string $name The cookie name
      * @param string $value The cookie value
@@ -33,71 +31,30 @@ final class Cookie
      * @param bool $httpOnly Whether the cookie is HTTP-only
      * @param string $sameSite The SameSite attribute value
      * @param bool $partitioned Whether the cookie is partitioned
+     *
+     * @throws InvalidArgumentException If the cookie name or attribute values are invalid
      */
-    private function __construct(
+    public function __construct(
         private readonly string $name,
-        private readonly string $value,
-        private readonly ?DateTimeInterface $expires,
-        private readonly ?int $maxAge,
-        private readonly string $path,
-        private readonly string $domain,
-        private readonly bool $secure,
-        private readonly bool $httpOnly,
-        private readonly string $sameSite,
-        private readonly bool $partitioned,
-    ) {}
-
-    /**
-     * Set the baseline cookie configuration.
-     *
-     * Typically called once at worker boot via `HttpConfig::apply()`. Every
-     * subsequent `Cookie::create()` reads its defaults from this config.
-     */
-    public static function setConfig(CookieConfig $config): void
-    {
-        self::$config = $config;
-    }
-
-    /**
-     * Get the active baseline configuration. Falls back to a hard-coded
-     * safe default if `setConfig()` has never been called.
-     */
-    public static function getConfig(): CookieConfig
-    {
-        return self::$config ??= new CookieConfig();
-    }
-
-    /**
-     * Create a new Cookie instance.
-     *
-     * Defaults are taken from the active CookieConfig (see setConfig).
-     * Override per-cookie via the `with*()` setters.
-     *
-     * @param string $name The cookie name
-     * @param string $value The cookie value
-     *
-     *
-     * @throws InvalidArgumentException If the cookie name is invalid
-     * @return self A new Cookie instance
-     */
-    public static function create(string $name, string $value = ''): self
-    {
+        private readonly string $value = '',
+        private readonly ?DateTimeInterface $expires = null,
+        private readonly ?int $maxAge = null,
+        private readonly string $path = '/',
+        private readonly string $domain = '',
+        private readonly bool $secure = true,
+        private readonly bool $httpOnly = true,
+        private readonly string $sameSite = 'Lax',
+        private readonly bool $partitioned = false,
+    ) {
         self::validateName($name);
 
-        $defaults = self::getConfig();
+        if ($path !== '') {
+            self::validateAttributeValue($path, 'path');
+        }
 
-        return new self(
-            name: $name,
-            value: $value,
-            expires: null,
-            maxAge: null,
-            path: $defaults->path,
-            domain: $defaults->domain,
-            secure: $defaults->secure,
-            httpOnly: $defaults->httpOnly,
-            sameSite: $defaults->sameSite,
-            partitioned: $defaults->partitioned,
-        );
+        if ($domain !== '') {
+            self::validateAttributeValue($domain, 'domain');
+        }
     }
 
     /**
@@ -294,8 +251,6 @@ final class Cookie
      */
     public function withPath(string $path): self
     {
-        self::validateAttributeValue($path, 'path');
-
         return new self(
             name: $this->name,
             value: $this->value,
@@ -321,8 +276,6 @@ final class Cookie
      */
     public function withDomain(string $domain): self
     {
-        self::validateAttributeValue($domain, 'domain');
-
         return new self(
             name: $this->name,
             value: $this->value,
@@ -524,8 +477,6 @@ final class Cookie
         $name = substr($firstSegment, 0, $equalsPos);
         $value = rawurldecode(substr($firstSegment, $equalsPos + 1));
 
-        self::validateName($name);
-
         $expires = null;
         $maxAge = null;
         $path = '/';
@@ -571,14 +522,12 @@ final class Cookie
                     break;
                 case 'path':
                     if ($attrValue !== null) {
-                        self::validateAttributeValue($attrValue, 'path');
                         $path = $attrValue;
                     }
 
                     break;
                 case 'domain':
                     if ($attrValue !== null) {
-                        self::validateAttributeValue($attrValue, 'domain');
                         $domain = $attrValue;
                     }
 

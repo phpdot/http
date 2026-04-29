@@ -5,10 +5,9 @@ declare(strict_types=1);
 /**
  * Cookie Config
  *
- * Baseline defaults applied by `Cookie::create()`. Set once at boot via
- * `Cookie::setConfig()` (typically called from `HttpConfig::apply()`),
- * then inherited by every cookie unless explicitly overridden via the
- * `with*()` setters.
+ * Baseline cookie defaults consumed by `ResponseFactory::cookie()` when
+ * building Cookie instances. Inherited by every cookie unless explicitly
+ * overridden via Cookie's `with*()` setters.
  *
  * Nested under HttpConfig — phpdot/config's nested DTO hydration handles
  * the typed sub-array under `'cookie' => [...]` in `config/http.php`.

@@ -33,60 +33,14 @@ final class Request implements ServerRequestInterface
     public const int HEADER_FORWARDED = 0b10000;
     public const int HEADER_X_FORWARDED_ALL = 0b01111;
 
-    /** @var list<string> */
-    private static array $trustedProxies = [];
-
-    private static int $trustedHeaders = 0;
-
     /**
      * @param ServerRequestInterface $request The inner PSR-7 server request
+     * @param HttpConfig $config Trusted-proxy / trusted-header settings (defaults to a fresh HttpConfig if not injected)
      */
     public function __construct(
         private readonly ServerRequestInterface $request,
+        private readonly HttpConfig $config = new HttpConfig(),
     ) {}
-
-    /**
-     * Configure trusted proxy IP addresses and which forwarded headers to trust.
-     *
-     * @param list<string> $proxies List of trusted proxy IPs or CIDR ranges
-     * @param int $trustedHeaders Bitmask of HEADER_* constants
-     */
-    public static function setTrustedProxies(array $proxies, int $trustedHeaders): void
-    {
-        self::$trustedProxies = $proxies;
-        self::$trustedHeaders = $trustedHeaders;
-    }
-
-    /**
-     * Configure trusted proxies from an HttpConfig DTO.
-     *
-     * Convenience wrapper over `setTrustedProxies()` that keeps app
-     * bootstraps config-driven instead of inlining raw values.
-     */
-    public static function initFromConfig(HttpConfig $config): void
-    {
-        self::setTrustedProxies($config->trustedProxies, $config->trustedHeaders);
-    }
-
-    /**
-     * Get the list of trusted proxy IP addresses.
-     *
-     * @return list<string> The trusted proxy IPs or CIDR ranges
-     */
-    public static function getTrustedProxies(): array
-    {
-        return self::$trustedProxies;
-    }
-
-    /**
-     * Get the bitmask of trusted forwarded headers.
-     *
-     * @return int The bitmask of HEADER_* constants
-     */
-    public static function getTrustedHeaders(): int
-    {
-        return self::$trustedHeaders;
-    }
 
     /**
      * Get the HTTP protocol version.
@@ -107,7 +61,7 @@ final class Request implements ServerRequestInterface
      */
     public function withProtocolVersion(string $version): static
     {
-        return new self($this->request->withProtocolVersion($version));
+        return new self($this->request->withProtocolVersion($version), $this->config);
     }
 
     /**
@@ -173,7 +127,7 @@ final class Request implements ServerRequestInterface
      */
     public function withHeader(string $name, $value): static
     {
-        return new self($this->request->withHeader($name, $value));
+        return new self($this->request->withHeader($name, $value), $this->config);
     }
 
     /**
@@ -186,7 +140,7 @@ final class Request implements ServerRequestInterface
      */
     public function withAddedHeader(string $name, $value): static
     {
-        return new self($this->request->withAddedHeader($name, $value));
+        return new self($this->request->withAddedHeader($name, $value), $this->config);
     }
 
     /**
@@ -198,7 +152,7 @@ final class Request implements ServerRequestInterface
      */
     public function withoutHeader(string $name): static
     {
-        return new self($this->request->withoutHeader($name));
+        return new self($this->request->withoutHeader($name), $this->config);
     }
 
     /**
@@ -220,7 +174,7 @@ final class Request implements ServerRequestInterface
      */
     public function withBody(StreamInterface $body): static
     {
-        return new self($this->request->withBody($body));
+        return new self($this->request->withBody($body), $this->config);
     }
 
     /**
@@ -242,7 +196,7 @@ final class Request implements ServerRequestInterface
      */
     public function withRequestTarget(string $requestTarget): static
     {
-        return new self($this->request->withRequestTarget($requestTarget));
+        return new self($this->request->withRequestTarget($requestTarget), $this->config);
     }
 
     /**
@@ -264,7 +218,7 @@ final class Request implements ServerRequestInterface
      */
     public function withMethod(string $method): static
     {
-        return new self($this->request->withMethod($method));
+        return new self($this->request->withMethod($method), $this->config);
     }
 
     /**
@@ -287,7 +241,7 @@ final class Request implements ServerRequestInterface
      */
     public function withUri(UriInterface $uri, bool $preserveHost = false): static
     {
-        return new self($this->request->withUri($uri, $preserveHost));
+        return new self($this->request->withUri($uri, $preserveHost), $this->config);
     }
 
     /**
@@ -333,7 +287,7 @@ final class Request implements ServerRequestInterface
      */
     public function withCookieParams(array $cookies): static
     {
-        return new self($this->request->withCookieParams($cookies));
+        return new self($this->request->withCookieParams($cookies), $this->config);
     }
 
     /**
@@ -362,7 +316,7 @@ final class Request implements ServerRequestInterface
      */
     public function withQueryParams(array $query): static
     {
-        return new self($this->request->withQueryParams($query));
+        return new self($this->request->withQueryParams($query), $this->config);
     }
 
     /**
@@ -392,7 +346,7 @@ final class Request implements ServerRequestInterface
      */
     public function withUploadedFiles(array $uploadedFiles): static
     {
-        return new self($this->request->withUploadedFiles($uploadedFiles));
+        return new self($this->request->withUploadedFiles($uploadedFiles), $this->config);
     }
 
     /**
@@ -415,7 +369,7 @@ final class Request implements ServerRequestInterface
      */
     public function withParsedBody($data): static
     {
-        return new self($this->request->withParsedBody($data));
+        return new self($this->request->withParsedBody($data), $this->config);
     }
 
     /**
@@ -458,7 +412,7 @@ final class Request implements ServerRequestInterface
      */
     public function withAttribute(string $name, $value): static
     {
-        return new self($this->request->withAttribute($name, $value));
+        return new self($this->request->withAttribute($name, $value), $this->config);
     }
 
     /**
@@ -470,7 +424,7 @@ final class Request implements ServerRequestInterface
      */
     public function withoutAttribute(string $name): static
     {
-        return new self($this->request->withoutAttribute($name));
+        return new self($this->request->withoutAttribute($name), $this->config);
     }
 
     /**
@@ -1260,7 +1214,7 @@ final class Request implements ServerRequestInterface
             return $remoteAddr;
         }
 
-        if ((self::$trustedHeaders & self::HEADER_FORWARDED) !== 0) {
+        if (($this->config->trustedHeaders & self::HEADER_FORWARDED) !== 0) {
             $forwarded = $this->request->getHeaderLine('Forwarded');
 
             if ($forwarded !== '' && preg_match('/for="?\[?([^"\];,\s]+)/', $forwarded, $matches) === 1) {
@@ -1268,7 +1222,7 @@ final class Request implements ServerRequestInterface
             }
         }
 
-        if ((self::$trustedHeaders & self::HEADER_X_FORWARDED_FOR) !== 0) {
+        if (($this->config->trustedHeaders & self::HEADER_X_FORWARDED_FOR) !== 0) {
             $forwardedFor = $this->request->getHeaderLine('X-Forwarded-For');
 
             if ($forwardedFor !== '') {
@@ -1288,7 +1242,7 @@ final class Request implements ServerRequestInterface
      */
     public function ips(): array
     {
-        if ($this->isTrustedProxy() && (self::$trustedHeaders & self::HEADER_X_FORWARDED_FOR) !== 0) {
+        if ($this->isTrustedProxy() && ($this->config->trustedHeaders & self::HEADER_X_FORWARDED_FOR) !== 0) {
             $forwardedFor = $this->request->getHeaderLine('X-Forwarded-For');
 
             if ($forwardedFor !== '') {
@@ -1306,7 +1260,7 @@ final class Request implements ServerRequestInterface
      */
     public function scheme(): string
     {
-        if ($this->isTrustedProxy() && (self::$trustedHeaders & self::HEADER_X_FORWARDED_PROTO) !== 0) {
+        if ($this->isTrustedProxy() && ($this->config->trustedHeaders & self::HEADER_X_FORWARDED_PROTO) !== 0) {
             $proto = $this->request->getHeaderLine('X-Forwarded-Proto');
 
             if ($proto !== '') {
@@ -1326,7 +1280,7 @@ final class Request implements ServerRequestInterface
      */
     public function host(): string
     {
-        if ($this->isTrustedProxy() && (self::$trustedHeaders & self::HEADER_X_FORWARDED_HOST) !== 0) {
+        if ($this->isTrustedProxy() && ($this->config->trustedHeaders & self::HEADER_X_FORWARDED_HOST) !== 0) {
             $host = $this->request->getHeaderLine('X-Forwarded-Host');
 
             if ($host !== '') {
@@ -1344,7 +1298,7 @@ final class Request implements ServerRequestInterface
      */
     public function port(): ?int
     {
-        if ($this->isTrustedProxy() && (self::$trustedHeaders & self::HEADER_X_FORWARDED_PORT) !== 0) {
+        if ($this->isTrustedProxy() && ($this->config->trustedHeaders & self::HEADER_X_FORWARDED_PORT) !== 0) {
             $port = $this->request->getHeaderLine('X-Forwarded-Port');
 
             if ($port !== '') {
@@ -1609,7 +1563,7 @@ final class Request implements ServerRequestInterface
      */
     private function isTrustedProxy(): bool
     {
-        if (self::$trustedProxies === []) {
+        if ($this->config->trustedProxies === []) {
             return false;
         }
 
@@ -1619,7 +1573,7 @@ final class Request implements ServerRequestInterface
             return false;
         }
 
-        return IpUtils::matches($remoteAddr, self::$trustedProxies);
+        return IpUtils::matches($remoteAddr, $this->config->trustedProxies);
     }
 
     /**
