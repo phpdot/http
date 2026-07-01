@@ -16,7 +16,7 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Http;
+namespace PHPdot\Http\Cookie;
 
 final readonly class CookieConfig
 {

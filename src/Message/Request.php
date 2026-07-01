@@ -15,10 +15,12 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Http;
+namespace PHPdot\Http\Message;
 
 use BackedEnum;
 use DateTimeImmutable;
+use PHPdot\Http\Support\HttpConfig;
+use PHPdot\Http\Support\IpUtils;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;

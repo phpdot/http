@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PHPdot\Http\Exception;
 
-use PHPdot\Http\StatusText;
+use PHPdot\Http\Support\StatusText;
 use RuntimeException;
 use Throwable;
 

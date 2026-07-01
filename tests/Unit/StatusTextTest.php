@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PHPdot\Http\Tests\Unit;
 
-use PHPdot\Http\StatusText;
+use PHPdot\Http\Support\StatusText;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;

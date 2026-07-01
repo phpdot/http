@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace PHPdot\Http\Tests\Unit;
 
 use DateTimeImmutable;
-use Nyholm\Psr7\ServerRequest;
-use Nyholm\Psr7\UploadedFile;
-use Nyholm\Psr7\Uri;
-use PHPdot\Http\HttpConfig;
-use PHPdot\Http\Request;
+use PHPdot\Http\Message\Request;
+use PHPdot\Http\Message\ServerRequest;
+use PHPdot\Http\Message\UploadedFile;
+use PHPdot\Http\Message\Uri;
+use PHPdot\Http\Support\HttpConfig;
 use PHPdot\Http\Tests\Stubs\Color;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -223,7 +223,7 @@ final class RequestTest extends TestCase
     public function with_body_returns_new_instance(): void
     {
         $request = new Request(new ServerRequest('GET', '/'));
-        $stream = \Nyholm\Psr7\Stream::create('hello');
+        $stream = \PHPdot\Http\Message\Stream::create('hello');
         $new = $request->withBody($stream);
 
         self::assertNotSame($request, $new);

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace PHPdot\Http\Tests\Unit;
 
-use PHPdot\Http\HttpConfig;
-use PHPdot\Http\Request;
+use PHPdot\Http\Message\Request;
+use PHPdot\Http\Support\HttpConfig;
 use PHPUnit\Framework\TestCase;
 
 final class HttpConfigTest extends TestCase

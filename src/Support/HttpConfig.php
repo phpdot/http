@@ -18,9 +18,10 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Http;
+namespace PHPdot\Http\Support;
 
 use PHPdot\Container\Attribute\Config;
+use PHPdot\Http\Cookie\CookieConfig;
 
 #[Config('http')]
 final readonly class HttpConfig

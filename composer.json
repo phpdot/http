@@ -12,12 +12,13 @@
     "keywords": ["http", "request", "response", "psr-7", "psr-17", "cookie", "exception"],
     "require": {
         "php": ">=8.4",
-        "nyholm/psr7": "^1.8",
+        "league/mime-type-detection": "^1.16",
         "psr/http-factory": "^1.0",
         "psr/http-message": "^2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
+        "php-http/psr7-integration-tests": "^1.5",
         "phpdot/config": "^1.1",
         "phpdot/container": "^1.5",
         "phpstan/phpstan": "^2.0",

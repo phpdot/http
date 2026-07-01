@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PHPdot\Http\Tests\Unit;
 
-use PHPdot\Http\IpUtils;
+use PHPdot\Http\Support\IpUtils;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

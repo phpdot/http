@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace PHPdot\Http\Tests\Unit;
 
-use Nyholm\Psr7\ServerRequest;
-use PHPdot\Http\CookieConfig;
-use PHPdot\Http\HttpConfig;
-use PHPdot\Http\Request;
-use PHPdot\Http\ResponseFactory;
+use PHPdot\Http\Cookie\CookieConfig;
+use PHPdot\Http\Factory\ResponseFactory;
+use PHPdot\Http\Message\Request;
+use PHPdot\Http\Message\ServerRequest;
+use PHPdot\Http\Support\HttpConfig;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

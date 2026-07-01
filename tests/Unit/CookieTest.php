@@ -6,7 +6,7 @@ namespace PHPdot\Http\Tests\Unit;
 
 use DateTimeImmutable;
 use InvalidArgumentException;
-use PHPdot\Http\Cookie;
+use PHPdot\Http\Cookie\Cookie;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

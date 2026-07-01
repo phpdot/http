@@ -11,7 +11,9 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Http;
+namespace PHPdot\Http\Response;
+
+use PHPdot\Http\Message\Response;
 
 final class RedirectResponse extends Response
 {

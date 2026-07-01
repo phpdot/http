@@ -7,31 +7,27 @@ declare(strict_types=1);
  *
  * Standalone PSR-7 ResponseInterface implementation. Create responses directly
  * without factories. Immutable — all with*() methods return a new instance.
+ * Message-level behavior (protocol version, headers, body) comes from MessageTrait.
  *
  * @author Omar Hamdan <omar@phpdot.com>
  * @license MIT
  */
 
-namespace PHPdot\Http;
+namespace PHPdot\Http\Message;
 
+use InvalidArgumentException;
+use PHPdot\Http\Cookie\Cookie;
+use PHPdot\Http\Support\StatusText;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 
 class Response implements ResponseInterface
 {
+    use MessageTrait;
+
     private int $statusCode;
 
     private string $reasonPhrase;
-
-    /** @var array<string, list<string>> */
-    private array $headers = [];
-
-    /** @var array<string, string> Original header name casing */
-    private array $headerNames = [];
-
-    private StreamInterface $body;
-
-    private string $protocolVersion = '1.1';
 
     /**
      * @param int $status The HTTP status code
@@ -50,18 +46,12 @@ class Response implements ResponseInterface
         $this->statusCode = $status;
         $this->reasonPhrase = $reason !== '' ? $reason : StatusText::get($status);
         $this->protocolVersion = $version;
-
-        foreach ($headers as $name => $value) {
-            $normalized = strtolower($name);
-            $this->headerNames[$normalized] = $name;
-            $this->headers[$normalized] = is_array($value) ? array_values($value) : [$value];
-        }
-
+        $this->setHeaders($headers);
         $this->body = $body instanceof StreamInterface ? $body : Stream::create($body);
     }
 
     // =========================================================================
-    // PSR-7 ResponseInterface
+    // PSR-7 ResponseInterface (status)
     // =========================================================================
 
     public function getStatusCode(): int
@@ -71,6 +61,8 @@ class Response implements ResponseInterface
 
     public function withStatus(int $code, string $reasonPhrase = ''): static
     {
+        $this->assertStatusCode($code);
+
         $clone = clone $this;
         $clone->statusCode = $code;
         $clone->reasonPhrase = $reasonPhrase !== '' ? $reasonPhrase : StatusText::get($code);
@@ -81,106 +73,6 @@ class Response implements ResponseInterface
     public function getReasonPhrase(): string
     {
         return $this->reasonPhrase;
-    }
-
-    // =========================================================================
-    // PSR-7 MessageInterface
-    // =========================================================================
-
-    public function getProtocolVersion(): string
-    {
-        return $this->protocolVersion;
-    }
-
-    public function withProtocolVersion(string $version): static
-    {
-        $clone = clone $this;
-        $clone->protocolVersion = $version;
-
-        return $clone;
-    }
-
-    /**
-     * @return array<string, list<string>>
-     */
-    public function getHeaders(): array
-    {
-        $result = [];
-
-        foreach ($this->headers as $normalized => $values) {
-            $name = $this->headerNames[$normalized];
-            $result[$name] = $values;
-        }
-
-        return $result;
-    }
-
-    public function hasHeader(string $name): bool
-    {
-        return isset($this->headers[strtolower($name)]);
-    }
-
-    /**
-     * @return list<string>
-     */
-    public function getHeader(string $name): array
-    {
-        $normalized = strtolower($name);
-
-        return $this->headers[$normalized] ?? [];
-    }
-
-    public function getHeaderLine(string $name): string
-    {
-        return implode(', ', $this->getHeader($name));
-    }
-
-    public function withHeader(string $name, $value): static
-    {
-        $normalized = strtolower($name);
-        $clone = clone $this;
-        $clone->headerNames[$normalized] = $name;
-        $clone->headers[$normalized] = is_array($value) ? array_values($value) : [$value];
-
-        return $clone;
-    }
-
-    public function withAddedHeader(string $name, $value): static
-    {
-        $normalized = strtolower($name);
-        $clone = clone $this;
-
-        if (!isset($clone->headerNames[$normalized])) {
-            $clone->headerNames[$normalized] = $name;
-            $clone->headers[$normalized] = [];
-        }
-
-        $newValues = is_array($value) ? array_values($value) : [$value];
-        $clone->headers[$normalized] = array_merge($clone->headers[$normalized], $newValues);
-
-        return $clone;
-    }
-
-    public function withoutHeader(string $name): static
-    {
-        $normalized = strtolower($name);
-        $clone = clone $this;
-        unset($clone->headers[$normalized], $clone->headerNames[$normalized]);
-
-        return $clone;
-    }
-
-    public function getBody(): StreamInterface
-    {
-        return $this->body;
-    }
-
-    public function withBody(StreamInterface $body): static
-    {
-        $clone = clone $this;
-        $clone->body = $body;
-
-        return $clone;
     }
 
     // =========================================================================
@@ -325,5 +217,23 @@ class Response implements ResponseInterface
     public function isOk(): bool
     {
         return $this->statusCode < 400;
+    }
+
+    // =========================================================================
+    // Validation
+    // =========================================================================
+
+    /**
+     * Assert an HTTP status code is within the valid 100-599 range.
+     *
+     * @param int $code The status code
+     *
+     * @throws InvalidArgumentException When the code is out of range
+     */
+    private function assertStatusCode(int $code): void
+    {
+        if ($code < 100 || $code > 599) {
+            throw new InvalidArgumentException(sprintf('Invalid status code "%d"; must be between 100 and 599.', $code));
+        }
     }
 }

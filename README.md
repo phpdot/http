@@ -1,6 +1,6 @@
 # phpdot/http
 
-Advanced HTTP library for PHP. PSR-7/17 native. Framework-agnostic.
+Advanced HTTP library for PHP. **Self-hosted PSR-7/17** — no third-party message implementation. Framework-agnostic, coroutine-safe.
 
 ## Install
 
@@ -10,24 +10,27 @@ composer require phpdot/http
 
 ## What It Is
 
-A standalone HTTP library that wraps any PSR-7 implementation with a rich, typed API:
+A **self-hosted PSR-7/17 implementation** with a rich, typed API on top — it ships its own message classes, so there's no `nyholm`/`guzzle`/`diactoros` under the hood:
 
-- **Request** — decorator over `ServerRequestInterface` with typed input, content negotiation, trusted proxies, method override
-- **ResponseFactory** — builds JSON, HTML, file downloads, redirects, cache headers, RFC 9457 problem details
+- **PSR-7 messages** — own `ServerRequest`, `Response`, `Stream`, `Uri`, `UploadedFile`, conformance-tested against `php-http/psr7-integration-tests`
+- **PSR-17 factories** — `ResponseFactory` implements all five factory interfaces
+- **Request** — ergonomic decorator over `ServerRequestInterface`: typed input, content negotiation, trusted proxies, method override
+- **ResponseFactory helpers** — JSON, HTML, file downloads (content-based MIME + Range), redirects, cache headers, RFC 9457 problem details, streaming & SSE
 - **Cookie** — immutable value object per RFC 6265
 - **HTTP Exceptions** — typed exceptions with RFC 9457 Problem Details
-- **IpUtils** — IPv4/IPv6 subnet checking for trusted proxy support
-- **StatusText** — complete RFC 9110 status code mapping
+- **IpUtils / StatusText** — IPv4/IPv6 subnet checking; complete RFC 9110 status mapping
+- **Coroutine-safe** — immutable value objects, zero static state; the singleton factory is safe to share across Swoole coroutines
 
 ## Dependencies
 
 ```
-php >= 8.3
+php >= 8.4
 psr/http-message ^2.0
 psr/http-factory ^1.0
+league/mime-type-detection ^1.16
 ```
 
-Two PSR interfaces. Nothing else.
+PSR interfaces plus a MIME database. **No third-party PSR-7 implementation.**
 
 ---
 
@@ -35,7 +38,7 @@ Two PSR interfaces. Nothing else.
 
 ```mermaid
 graph TD
-    PSR7["Any PSR-7 implementation<br/><br/>Nyholm, Guzzle, Laminas.<br/>Produces a ServerRequestInterface"]
+    PSR7["phpdot/http PSR-7<br/><br/>Own ServerRequest / Response / Stream /<br/>Uri / UploadedFile — conformance-tested,<br/>no third-party implementation"]
 
     subgraph Inbound
         direction TB
@@ -64,7 +67,7 @@ graph TD
 Wraps any `ServerRequestInterface`. Implements `ServerRequestInterface` itself — drop-in compatible.
 
 ```php
-use PHPdot\Http\Request;
+use PHPdot\Http\Message\Request;
 
 $request = new Request($psrRequest);
 ```
@@ -213,12 +216,12 @@ $request->psr();                          // inner ServerRequestInterface
 
 ## ResponseFactory
 
-Builds PSR-7 responses. Depends on PSR-17 factories.
+Implements all five PSR-17 factory interfaces and builds phpdot/http's own PSR-7 responses — plus a rich set of helpers.
 
 ```php
-use PHPdot\Http\ResponseFactory;
+use PHPdot\Http\Factory\ResponseFactory;
 
-$factory = new ResponseFactory($responseFactory, $streamFactory);
+$factory = new ResponseFactory();   // self-contained (optionally: new ResponseFactory($httpConfig))
 ```
 
 ### Basic Responses
@@ -320,6 +323,32 @@ $factory->problem(
 // {"type":"about:blank","title":"Unprocessable Content","status":422,"detail":"Email is already taken","field":"email"}
 ```
 
+### Streaming & Server-Sent Events
+
+`StreamedResponse` produces its body incrementally at send time instead of buffering it — for large/generated output and SSE. It's a full PSR-7 response; the server transport (`server-swoole`) detects `StreamedResponseInterface` and pumps chunks over a long-lived connection.
+
+```php
+use PHPdot\Http\Response\SseWriter;
+
+// Generic streaming — $write returns false once the client disconnects
+return $factory->stream(function (callable $write): void {
+    foreach ($rows as $row) {
+        $write(json_encode($row) . "\n");
+    }
+});
+
+// Server-Sent Events — proxy-safe headers set automatically
+return $factory->sse(function (SseWriter $sse) use ($request): void {
+    $lastId = $request->getHeaderLine('Last-Event-ID');   // resume support
+    while ($sse->send(data: json_encode($event), event: 'update', id: (string) $event->id)) {
+        $sse->comment();                                   // heartbeat — survives proxy idle timeouts
+        \Swoole\Coroutine::sleep(1);
+    }
+});
+```
+
+SSE responses set `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform` (stops Cloudflare / CDNs buffering or gzipping the stream), `Connection: keep-alive`, and `X-Accel-Buffering: no`.
+
 ---
 
 ## Cookie
@@ -327,7 +356,7 @@ $factory->problem(
 Pure immutable value object. Builds and parses Set-Cookie headers per RFC 6265.
 
 ```php
-use PHPdot\Http\Cookie;
+use PHPdot\Http\Cookie\Cookie;
 
 // Direct construction — uses safe defaults: secure=true, httpOnly=true, sameSite=Lax, path='/'
 $cookie = new Cookie('session', 'abc123');
@@ -440,7 +469,7 @@ $exception->toProblemDetails();
 Standalone IPv4/IPv6 utility.
 
 ```php
-use PHPdot\Http\IpUtils;
+use PHPdot\Http\Support\IpUtils;
 
 IpUtils::inRange('10.0.0.5', '10.0.0.0/8');          // true
 IpUtils::inRange('::1', '::1/128');                    // true
@@ -458,7 +487,7 @@ IpUtils::isIPv6('::1');                                // true
 Complete RFC 9110 mapping.
 
 ```php
-use PHPdot\Http\StatusText;
+use PHPdot\Http\Support\StatusText;
 
 StatusText::get(200);  // "OK"
 StatusText::get(404);  // "Not Found"
@@ -472,28 +501,14 @@ StatusText::get(999);  // ""
 
 ```
 src/
-├── Request.php                 PSR-7 decorator with rich API
-├── ResponseFactory.php         Builds all response types
-├── Cookie.php                  Immutable RFC 6265 cookie
-├── IpUtils.php                 IPv4/IPv6 subnet checking
-├── StatusText.php              RFC 9110 status codes
-└── Exception/
-    ├── HttpException.php       Base (RFC 9457 Problem Details)
-    ├── BadRequestException.php
-    ├── UnauthorizedException.php
-    ├── ForbiddenException.php
-    ├── NotFoundException.php
-    ├── MethodNotAllowedException.php
-    ├── RequestTimeoutException.php
-    ├── ConflictException.php
-    ├── PayloadTooLargeException.php
-    ├── UnsupportedMediaTypeException.php
-    ├── UnprocessableEntityException.php
-    ├── TooManyRequestsException.php
-    ├── ServerErrorException.php
-    ├── BadGatewayException.php
-    ├── ServiceUnavailableException.php
-    └── GatewayTimeoutException.php
+├── Message/          Own PSR-7 messages — Request (decorator) · ServerRequest · Response ·
+│                     Stream · Uri · UploadedFile · MessageTrait
+├── Response/         JsonResponse · HtmlResponse · RedirectResponse ·
+│                     StreamedResponse · StreamedResponseInterface · SseWriter
+├── Factory/          ResponseFactory — PSR-17 factories + all response helpers
+├── Cookie/           Cookie · CookieConfig
+├── Support/          IpUtils · StatusText · HttpConfig
+└── Exception/        HttpException + 16 typed HTTP exceptions
 ```
 
 ---
@@ -506,7 +521,7 @@ src/
 
 ```php
 // config/http.php
-use PHPdot\Http\Request;
+use PHPdot\Http\Message\Request;
 
 return [
     'trustedProxies' => [],
@@ -563,7 +578,7 @@ Per-environment override is the natural place to flip `secure` for HTTP developm
 
 ```php
 // config/http.php
-use PHPdot\Http\Request;
+use PHPdot\Http\Message\Request;
 
 return [
     'trustedProxies' => [
@@ -692,7 +707,7 @@ final class ApiErrorHandler implements MiddlewareInterface
 ## Development
 
 ```bash
-composer test        # PHPUnit (256 tests)
+composer test        # PHPUnit (425 tests + PSR-7 conformance suite)
 composer analyse     # PHPStan level 10
 composer cs-fix      # PHP-CS-Fixer
 composer cs-check    # Dry run

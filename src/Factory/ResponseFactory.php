@@ -8,21 +8,36 @@ declare(strict_types=1);
  * Full PSR-17 factory implementation with convenient helpers for JSON, HTML,
  * file downloads, caching, cookies, and RFC 9457 problem details.
  *
- * Implements all five PSR-17 factory interfaces. Response creation uses
- * the standalone Response class; the remaining four delegate to Nyholm
- * internally.
+ * Implements all five PSR-17 factory interfaces, each building phpdot/http's
+ * own standalone PSR-7 classes (Response, ServerRequest, Stream, Uri,
+ * UploadedFile) — no third-party PSR-7 implementation required.
  *
  * @author Omar Hamdan <omar@phpdot.com>
  * @license MIT
  */
 
-namespace PHPdot\Http;
+namespace PHPdot\Http\Factory;
 
+use Closure;
 use DateTimeInterface;
 use DateTimeZone;
-use Nyholm\Psr7\Factory\Psr17Factory;
+use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use League\MimeTypeDetection\MimeTypeDetector;
 use PHPdot\Container\Attribute\Binds;
 use PHPdot\Container\Attribute\Singleton;
+use PHPdot\Http\Cookie\Cookie;
+use PHPdot\Http\Message\Response;
+use PHPdot\Http\Message\ServerRequest;
+use PHPdot\Http\Message\Stream;
+use PHPdot\Http\Message\UploadedFile;
+use PHPdot\Http\Message\Uri;
+use PHPdot\Http\Response\HtmlResponse;
+use PHPdot\Http\Response\JsonResponse;
+use PHPdot\Http\Response\RedirectResponse;
+use PHPdot\Http\Response\SseWriter;
+use PHPdot\Http\Response\StreamedResponse;
+use PHPdot\Http\Support\HttpConfig;
+use PHPdot\Http\Support\StatusText;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
@@ -48,33 +63,12 @@ final class ResponseFactory implements
     UriFactoryInterface,
     UploadedFileFactoryInterface
 {
-    /** @var array<string, string> */
-    private const array MIME_TYPES = [
-        'pdf'  => 'application/pdf',
-        'zip'  => 'application/zip',
-        'csv'  => 'text/csv',
-        'json' => 'application/json',
-        'xml'  => 'application/xml',
-        'html' => 'text/html',
-        'txt'  => 'text/plain',
-        'png'  => 'image/png',
-        'jpg'  => 'image/jpeg',
-        'gif'  => 'image/gif',
-        'svg'  => 'image/svg+xml',
-        'mp4'  => 'video/mp4',
-        'mp3'  => 'audio/mpeg',
-        'doc'  => 'application/msword',
-        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'xls'  => 'application/vnd.ms-excel',
-        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ];
-
-    private readonly Psr17Factory $psr17;
+    private readonly MimeTypeDetector $mimeDetector;
 
     public function __construct(
         private readonly HttpConfig $config = new HttpConfig(),
     ) {
-        $this->psr17 = new Psr17Factory();
+        $this->mimeDetector = new FinfoMimeTypeDetector();
     }
 
     /**
@@ -128,7 +122,7 @@ final class ResponseFactory implements
      */
     public function createServerRequest(string $method, $uri, array $serverParams = []): ServerRequestInterface
     {
-        return $this->psr17->createServerRequest($method, $uri, $serverParams);
+        return new ServerRequest($method, $uri, [], null, '1.1', $serverParams);
     }
 
     /**
@@ -175,7 +169,7 @@ final class ResponseFactory implements
      */
     public function createUri(string $uri = ''): UriInterface
     {
-        return $this->psr17->createUri($uri);
+        return new Uri($uri);
     }
 
     /**
@@ -194,7 +188,7 @@ final class ResponseFactory implements
         ?string $clientFilename = null,
         ?string $clientMediaType = null,
     ): UploadedFileInterface {
-        return $this->psr17->createUploadedFile($stream, $size, $error, $clientFilename, $clientMediaType);
+        return new UploadedFile($stream, $size, $error, $clientFilename, $clientMediaType);
     }
 
     // =========================================================================
@@ -697,16 +691,65 @@ final class ResponseFactory implements
     }
 
     /**
-     * Guess the MIME type of a file based on its extension.
+     * Create a streamed response whose body is produced incrementally at send time,
+     * for large or generated output that shouldn't be buffered in memory.
+     *
+     * @param Closure(callable(string): bool): void $producer Emits chunks through the writer it is handed
+     * @param int $status The HTTP status code
+     * @param array<string, string|string[]> $headers Response headers
+     */
+    public function stream(Closure $producer, int $status = 200, array $headers = []): StreamedResponse
+    {
+        return new StreamedResponse($producer, $status, $headers);
+    }
+
+    /**
+     * Create a Server-Sent Events (text/event-stream) response. The handler receives an
+     * SseWriter and pushes frames; under Swoole it may loop with Co::sleep() until the
+     * client disconnects.
+     *
+     * Headers are set for reverse-proxy compatibility: `Cache-Control: no-cache, no-transform`
+     * stops Cloudflare (and other CDNs) from buffering or compressing the stream, and
+     * `X-Accel-Buffering: no` disables nginx buffering. Use SseWriter::comment() as a
+     * periodic heartbeat to survive proxy idle timeouts.
+     *
+     * @param Closure(SseWriter): void $handler Pushes SSE frames through the given writer
+     * @param int $status The HTTP status code
+     */
+    public function sse(Closure $handler, int $status = 200): StreamedResponse
+    {
+        $producer = static function (callable $write) use ($handler): void {
+            $handler(new SseWriter($write));
+        };
+
+        return new StreamedResponse($producer, $status, [
+            'Content-Type'      => 'text/event-stream',
+            'Cache-Control'     => 'no-cache, no-transform',
+            'Connection'        => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * Detect a file's MIME type: content-based sniffing via finfo, falling back to
+     * the extension database for inconclusive results (league/mime-type-detection).
      *
      * @param string $path The file path
      *
-     * @return string The guessed MIME type, or application/octet-stream if unknown
+     * @return string The detected MIME type, or application/octet-stream if unknown
      */
     private function guessMimeType(string $path): string
     {
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $sample = '';
 
-        return self::MIME_TYPES[$extension] ?? 'application/octet-stream';
+        if (is_file($path)) {
+            $read = file_get_contents($path, false, null, 0, 4096);
+
+            if ($read !== false) {
+                $sample = $read;
+            }
+        }
+
+        return $this->mimeDetector->detectMimeType($path, $sample) ?? 'application/octet-stream';
     }
 }

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace PHPdot\Http\Tests\Unit;
 
 use DateTimeImmutable;
-use Nyholm\Psr7\ServerRequest;
-use PHPdot\Http\Cookie;
-use PHPdot\Http\ResponseFactory;
+use PHPdot\Http\Cookie\Cookie;
+use PHPdot\Http\Factory\ResponseFactory;
+use PHPdot\Http\Message\ServerRequest;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
