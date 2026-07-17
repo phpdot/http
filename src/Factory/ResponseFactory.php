@@ -1,0 +1,764 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Response Factory
+ *
+ * Full PSR-17 factory implementation with convenient helpers for JSON, HTML,
+ * file downloads, caching, cookies, and RFC 9457 problem details.
+ *
+ * Implements all five PSR-17 factory interfaces, each building phpdot/http's
+ * own standalone PSR-7 classes (Response, ServerRequest, Stream, Uri,
+ * UploadedFile) — no third-party PSR-7 implementation required.
+ *
+ * @author Omar Hamdan <omar@phpdot.com>
+ * @license MIT
+ */
+
+namespace PHPdot\Http\Factory;
+
+use Closure;
+use DateTimeInterface;
+use DateTimeZone;
+use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use League\MimeTypeDetection\MimeTypeDetector;
+use PHPdot\Container\Attribute\Binds;
+use PHPdot\Container\Attribute\Singleton;
+use PHPdot\Http\Config\HttpConfig;
+use PHPdot\Http\Cookie\Cookie;
+use PHPdot\Http\Message\Response;
+use PHPdot\Http\Message\ServerRequest;
+use PHPdot\Http\Message\Stream;
+use PHPdot\Http\Message\UploadedFile;
+use PHPdot\Http\Message\Uri;
+use PHPdot\Http\Response\HtmlResponse;
+use PHPdot\Http\Response\JsonResponse;
+use PHPdot\Http\Response\RedirectResponse;
+use PHPdot\Http\Response\SseWriter;
+use PHPdot\Http\Response\StreamedResponse;
+use PHPdot\Http\Support\StatusText;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
+use Psr\Http\Message\UploadedFileFactoryInterface;
+use Psr\Http\Message\UploadedFileInterface;
+use Psr\Http\Message\UriFactoryInterface;
+use Psr\Http\Message\UriInterface;
+use RuntimeException;
+
+#[Singleton]
+#[Binds(ResponseFactoryInterface::class)]
+#[Binds(ServerRequestFactoryInterface::class)]
+#[Binds(StreamFactoryInterface::class)]
+#[Binds(UriFactoryInterface::class)]
+#[Binds(UploadedFileFactoryInterface::class)]
+final class ResponseFactory implements
+    ResponseFactoryInterface,
+    ServerRequestFactoryInterface,
+    StreamFactoryInterface,
+    UriFactoryInterface,
+    UploadedFileFactoryInterface
+{
+    private readonly MimeTypeDetector $mimeDetector;
+
+    /**
+     * Create the factory over the given HTTP configuration.
+     *
+     * @param HttpConfig $config
+     */
+    public function __construct(
+        private readonly HttpConfig $config = new HttpConfig(),
+    ) {
+        $this->mimeDetector = new FinfoMimeTypeDetector();
+    }
+
+    /**
+     * Build a Cookie pre-populated with the app-wide defaults from `config/http.php`'s
+     * `cookie` block (delivered via the injected HttpConfig). Override individual fields
+     * with the Cookie's `with*()` chain.
+     *
+     * Defaults to a session cookie (no Expires/Max-Age). Use `withMaxAge()` or
+     * `withExpires()` for a long-lived cookie.
+     *
+     * @param string $name The cookie name
+     * @param string $value The cookie value
+     *
+     * @return Cookie
+     */
+    public function cookie(string $name, string $value = ''): Cookie
+    {
+        return new Cookie(
+            name: $name,
+            value: $value,
+            path: $this->config->cookie->path,
+            domain: $this->config->cookie->domain,
+            secure: $this->config->cookie->secure,
+            httpOnly: $this->config->cookie->httpOnly,
+            sameSite: $this->config->cookie->sameSite,
+            partitioned: $this->config->cookie->partitioned,
+        );
+    }
+
+    /**
+     * Create a new response (PSR-17).
+     *
+     * @param int $code HTTP status code
+     * @param string $reasonPhrase Reason phrase to associate with status code
+     *
+     * @return Response The response
+     */
+    public function createResponse(int $code = 200, string $reasonPhrase = ''): Response
+    {
+        return new Response($code, [], '', '1.1', $reasonPhrase);
+    }
+
+    /**
+     * Create a new server request (PSR-17).
+     *
+     * @param string $method The HTTP method
+     * @param UriInterface|string $uri The URI
+     * @param array<array-key, mixed> $serverParams Server parameters
+     */
+    public function createServerRequest(string $method, $uri, array $serverParams = []): ServerRequestInterface
+    {
+        return new ServerRequest($method, $uri, [], null, '1.1', $serverParams);
+    }
+
+    /**
+     * Create a new stream from a string (PSR-17).
+     *
+     * @param string $content String content
+     */
+    public function createStream(string $content = ''): StreamInterface
+    {
+        return Stream::create($content);
+    }
+
+    /**
+     * Create a stream from an existing file (PSR-17).
+     *
+     * @param string $filename Filename or stream URI
+     * @param string $mode File mode
+     */
+    public function createStreamFromFile(string $filename, string $mode = 'r'): StreamInterface
+    {
+        $resource = fopen($filename, $mode);
+
+        if ($resource === false) {
+            throw new RuntimeException(sprintf('Unable to open file "%s"', $filename));
+        }
+
+        return new Stream($resource);
+    }
+
+    /**
+     * Create a new stream from an existing resource (PSR-17).
+     *
+     * @param resource $resource PHP resource
+     */
+    public function createStreamFromResource($resource): StreamInterface
+    {
+        return new Stream($resource);
+    }
+
+    /**
+     * Create a new URI (PSR-17).
+     *
+     * @param string $uri The URI string
+     */
+    public function createUri(string $uri = ''): UriInterface
+    {
+        return new Uri($uri);
+    }
+
+    /**
+     * Create a new uploaded file (PSR-17).
+     *
+     * @param StreamInterface $stream The uploaded file stream
+     * @param int|null $size File size in bytes
+     * @param int $error PHP upload error code
+     * @param string|null $clientFilename Client filename
+     * @param string|null $clientMediaType Client media type
+     */
+    public function createUploadedFile(
+        StreamInterface $stream,
+        ?int $size = null,
+        int $error = \UPLOAD_ERR_OK,
+        ?string $clientFilename = null,
+        ?string $clientMediaType = null,
+    ): UploadedFileInterface {
+        return new UploadedFile($stream, $size, $error, $clientFilename, $clientMediaType);
+    }
+
+    /**
+     * Create a JSON response.
+     *
+     * @param mixed $data The data to encode as JSON
+     * @param int $status The HTTP status code
+     * @param int $options Additional JSON encoding options OR'd with defaults
+     *
+     * @throws \JsonException If encoding fails
+     *
+     * @return JsonResponse The JSON response
+     */
+    public function json(mixed $data, int $status = 200, int $options = 0): JsonResponse
+    {
+        return new JsonResponse($data, $status, [], $options);
+    }
+
+    /**
+     * Create an HTML response.
+     *
+     * @param string $html The HTML content
+     * @param int $status The HTTP status code
+     *
+     * @return HtmlResponse The HTML response
+     */
+    public function html(string $html, int $status = 200): HtmlResponse
+    {
+        return new HtmlResponse($html, $status);
+    }
+
+    /**
+     * Create a plain text response.
+     *
+     * @param string $text The text content
+     * @param int $status The HTTP status code
+     *
+     * @return Response The plain text response
+     */
+    public function text(string $text, int $status = 200): Response
+    {
+        return new Response($status, ['Content-Type' => 'text/plain; charset=UTF-8'], $text);
+    }
+
+    /**
+     * Create an XML response.
+     *
+     * @param string $xml The XML content
+     * @param int $status The HTTP status code
+     *
+     * @return Response The XML response
+     */
+    public function xml(string $xml, int $status = 200): Response
+    {
+        return new Response($status, ['Content-Type' => 'application/xml; charset=UTF-8'], $xml);
+    }
+
+    /**
+     * Create a redirect response.
+     *
+     * @param string $url The URL to redirect to
+     * @param int $status The HTTP status code (default 302 Found)
+     *
+     * @return RedirectResponse The redirect response
+     */
+    public function redirect(string $url, int $status = 302): RedirectResponse
+    {
+        return new RedirectResponse($url, $status);
+    }
+
+    /**
+     * Create a no-content response.
+     *
+     * @param int $status The HTTP status code (default 204 No Content)
+     *
+     * @return Response The empty response
+     */
+    public function noContent(int $status = 204): Response
+    {
+        return new Response($status);
+    }
+
+    /**
+     * Create a raw response with the given status code.
+     *
+     * @param int $status The HTTP status code
+     *
+     * @return Response The raw response
+     */
+    public function raw(int $status = 200): Response
+    {
+        return new Response($status);
+    }
+
+    /**
+     * Create a file download response.
+     *
+     * Sets Content-Disposition with ASCII fallback and UTF-8 per RFC 5987.
+     *
+     * @param string $path The absolute path to the file
+     * @param string $name The download filename (defaults to basename)
+     * @param array<string, string> $headers Additional headers to include
+     *
+     * @throws RuntimeException If the file does not exist or is not readable
+     *
+     * @return Response The download response
+     */
+    public function download(string $path, string $name = '', array $headers = []): Response
+    {
+        if (!is_file($path) || !is_readable($path)) {
+            throw new RuntimeException(
+                sprintf('File "%s" does not exist or is not readable.', $path),
+            );
+        }
+
+        $fileName = $name !== '' ? $name : basename($path);
+        $asciiName = preg_replace('/[^\x20-\x7E]/', '_', $fileName) ?? $fileName;
+        $mimeType = $this->guessMimeType($path);
+        $contents = file_get_contents($path);
+
+        if ($contents === false) {
+            throw new RuntimeException(
+                sprintf('Unable to read file "%s".', $path),
+            );
+        }
+
+        $disposition = sprintf(
+            'attachment; filename="%s"; filename*=UTF-8\'\'%s',
+            $asciiName,
+            rawurlencode($fileName),
+        );
+
+        $response = new Response(200, ['Content-Type' => $mimeType, 'Content-Disposition' => $disposition], $contents);
+
+        foreach ($headers as $headerName => $headerValue) {
+            $response = $response->withHeader($headerName, $headerValue);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Serve a file inline with HTTP Range support (RFC 7233).
+     *
+     * Sets ETag, Last-Modified, and Accept-Ranges headers. Supports single
+     * byte-range requests returning 206 Partial Content.
+     *
+     * @param string $path The absolute path to the file
+     * @param ServerRequestInterface $request The incoming request for Range header parsing
+     * @param array<string, string> $headers Additional headers to include
+     *
+     * @throws RuntimeException If the file does not exist or is not readable
+     *
+     * @return Response The file response
+     */
+    public function file(string $path, ServerRequestInterface $request, array $headers = []): Response
+    {
+        if (!is_file($path) || !is_readable($path)) {
+            throw new RuntimeException(
+                sprintf('File "%s" does not exist or is not readable.', $path),
+            );
+        }
+
+        $mimeType = $this->guessMimeType($path);
+        $fileSize = filesize($path);
+        $mtime = filemtime($path);
+
+        if ($fileSize === false || $mtime === false) {
+            throw new RuntimeException(
+                sprintf('Unable to stat file "%s".', $path),
+            );
+        }
+
+        $etag = sprintf('W/"%d-%d"', $mtime, $fileSize);
+        $lastModified = gmdate('D, d M Y H:i:s', $mtime) . ' GMT';
+
+        $rangeHeader = $request->getHeaderLine('Range');
+
+        if ($rangeHeader === '') {
+            $contents = file_get_contents($path);
+
+            if ($contents === false) {
+                throw new RuntimeException(
+                    sprintf('Unable to read file "%s".', $path),
+                );
+            }
+
+            $response = new Response(200, [
+                'Content-Type' => $mimeType,
+                'ETag' => $etag,
+                'Last-Modified' => $lastModified,
+                'Accept-Ranges' => 'bytes',
+                'Content-Length' => (string) $fileSize,
+            ], $contents);
+
+            foreach ($headers as $headerName => $headerValue) {
+                $response = $response->withHeader($headerName, $headerValue);
+            }
+
+            return $response;
+        }
+
+        $matches = [];
+
+        if (preg_match('/^bytes=(\d*)-(\d*)$/', $rangeHeader, $matches) !== 1) {
+            return new Response(416, ['Content-Range' => sprintf('bytes */%d', $fileSize)]);
+        }
+
+        $start = $matches[1] !== '' ? (int) $matches[1] : null;
+        $end = $matches[2] !== '' ? (int) $matches[2] : null;
+
+        if ($start === null && $end === null) {
+            return new Response(416, ['Content-Range' => sprintf('bytes */%d', $fileSize)]);
+        }
+
+        if ($start === null) {
+            /**
+             * @var int $end
+             */
+            $start = $fileSize - $end;
+            $end = $fileSize - 1;
+        } elseif ($end === null) {
+            $end = $fileSize - 1;
+        }
+
+        if ($start < 0 || $start > $end || $end >= $fileSize) {
+            return new Response(416, ['Content-Range' => sprintf('bytes */%d', $fileSize)]);
+        }
+
+        $length = max(1, $end - $start + 1);
+        $handle = fopen($path, 'rb');
+
+        if ($handle === false) {
+            throw new RuntimeException(
+                sprintf('Unable to open file "%s".', $path),
+            );
+        }
+
+        fseek($handle, $start);
+        $contents = fread($handle, $length);
+        fclose($handle);
+
+        if ($contents === false) {
+            throw new RuntimeException(
+                sprintf('Unable to read file "%s".', $path),
+            );
+        }
+
+        $response = new Response(206, [
+            'Content-Type' => $mimeType,
+            'ETag' => $etag,
+            'Last-Modified' => $lastModified,
+            'Accept-Ranges' => 'bytes',
+            'Content-Length' => (string) $length,
+            'Content-Range' => sprintf('bytes %d-%d/%d', $start, $end, $fileSize),
+        ], $contents);
+
+        foreach ($headers as $headerName => $headerValue) {
+            $response = $response->withHeader($headerName, $headerValue);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Add Cache-Control headers to a response.
+     *
+     * @param ResponseInterface $response The response to modify
+     * @param int $maxAge The max-age value in seconds
+     * @param bool $public Whether the response is publicly cacheable
+     * @param bool $mustRevalidate Whether caches must revalidate
+     * @param bool $immutable Whether the response is immutable
+     * @param bool $noStore Whether the response must not be stored
+     *
+     * @return ResponseInterface The response with Cache-Control header
+     */
+    public function withCache(
+        ResponseInterface $response,
+        int $maxAge,
+        bool $public = false,
+        bool $mustRevalidate = false,
+        bool $immutable = false,
+        bool $noStore = false,
+    ): ResponseInterface {
+        if ($noStore) {
+            return $response->withHeader('Cache-Control', 'no-store, no-cache');
+        }
+
+        $directives = [];
+
+        if ($public) {
+            $directives[] = 'public';
+        } else {
+            $directives[] = 'private';
+        }
+
+        $directives[] = sprintf('max-age=%d', $maxAge);
+
+        if ($mustRevalidate) {
+            $directives[] = 'must-revalidate';
+        }
+
+        if ($immutable) {
+            $directives[] = 'immutable';
+        }
+
+        return $response->withHeader('Cache-Control', implode(', ', $directives));
+    }
+
+    /**
+     * Add an ETag header to a response.
+     *
+     * @param ResponseInterface $response The response to modify
+     * @param string $etag The ETag value (without quotes)
+     * @param bool $weak Whether to use a weak ETag
+     *
+     * @return ResponseInterface The response with ETag header
+     */
+    public function withEtag(ResponseInterface $response, string $etag, bool $weak = false): ResponseInterface
+    {
+        $value = $weak ? sprintf('W/"%s"', $etag) : sprintf('"%s"', $etag);
+
+        return $response->withHeader('ETag', $value);
+    }
+
+    /**
+     * Add a Last-Modified header to a response.
+     *
+     * @param ResponseInterface $response The response to modify
+     * @param DateTimeInterface $date The last modification date
+     *
+     * @return ResponseInterface The response with Last-Modified header
+     */
+    public function withLastModified(ResponseInterface $response, DateTimeInterface $date): ResponseInterface
+    {
+        $formatted = (new \DateTimeImmutable('@' . $date->getTimestamp()))
+            ->setTimezone(new DateTimeZone('GMT'))
+            ->format('D, d M Y H:i:s') . ' GMT';
+
+        return $response->withHeader('Last-Modified', $formatted);
+    }
+
+    /**
+     * Check if a response has not been modified based on request conditions.
+     *
+     * Compares If-None-Match against ETag and If-Modified-Since against
+     * Last-Modified. When both are present, both must pass.
+     *
+     * @param ServerRequestInterface $request The incoming request
+     * @param ResponseInterface $response The prepared response
+     *
+     * @return bool True if the response has not been modified
+     */
+    public function isNotModified(ServerRequestInterface $request, ResponseInterface $response): bool
+    {
+        $ifNoneMatch = $request->getHeaderLine('If-None-Match');
+        $ifModifiedSince = $request->getHeaderLine('If-Modified-Since');
+
+        if ($ifNoneMatch === '' && $ifModifiedSince === '') {
+            return false;
+        }
+
+        $etagMatch = null;
+        $modifiedMatch = null;
+
+        if ($ifNoneMatch !== '') {
+            $responseEtag = $response->getHeaderLine('ETag');
+
+            if ($responseEtag === '') {
+                $etagMatch = false;
+            } else {
+                $stripWeak = static fn(string $tag): string => str_starts_with($tag, 'W/') ? substr($tag, 2) : $tag;
+
+                $clientTags = array_map(
+                    static fn(string $tag): string => $stripWeak(trim($tag)),
+                    explode(',', $ifNoneMatch),
+                );
+
+                $etagMatch = in_array($stripWeak($responseEtag), $clientTags, true);
+            }
+        }
+
+        if ($ifModifiedSince !== '') {
+            $lastModified = $response->getHeaderLine('Last-Modified');
+
+            if ($lastModified === '') {
+                $modifiedMatch = false;
+            } else {
+                $sinceTime = strtotime($ifModifiedSince);
+                $lastTime = strtotime($lastModified);
+
+                $modifiedMatch = $sinceTime !== false
+                    && $lastTime !== false
+                    && $lastTime <= $sinceTime;
+            }
+        }
+
+        if ($etagMatch !== null && $modifiedMatch !== null) {
+            return $etagMatch && $modifiedMatch;
+        }
+
+        if ($etagMatch !== null) {
+            return $etagMatch;
+        }
+
+        return $modifiedMatch;
+    }
+
+    /**
+     * Create a 304 Not Modified response.
+     *
+     * @return Response The 304 response
+     */
+    public function notModified(): Response
+    {
+        return new Response(304);
+    }
+
+    /**
+     * Add a Set-Cookie header to a response.
+     *
+     * @param ResponseInterface $response The response to modify
+     * @param Cookie $cookie The cookie to set
+     *
+     * @return ResponseInterface The response with Set-Cookie header added
+     */
+    public function withCookie(ResponseInterface $response, Cookie $cookie): ResponseInterface
+    {
+        return $response->withAddedHeader('Set-Cookie', $cookie->toHeaderString());
+    }
+
+    /**
+     * Add an expired Set-Cookie header to remove a cookie.
+     *
+     * @param ResponseInterface $response The response to modify
+     * @param string $name The cookie name to remove
+     * @param string $path The cookie path
+     * @param string $domain The cookie domain
+     *
+     * @return ResponseInterface The response with expired Set-Cookie header
+     */
+    public function withoutCookie(
+        ResponseInterface $response,
+        string $name,
+        string $path = '/',
+        string $domain = '',
+    ): ResponseInterface {
+        $cookie = new Cookie(
+            name: $name,
+            value: '',
+            maxAge: -1,
+            path: $path,
+            domain: $domain,
+        );
+
+        return $response->withAddedHeader('Set-Cookie', $cookie->toHeaderString());
+    }
+
+    /**
+     * Create an RFC 9457 Problem Details JSON response.
+     *
+     * @param int $status The HTTP status code
+     * @param string $detail A human-readable explanation
+     * @param string $type A URI reference identifying the problem type
+     * @param string $title A short summary (defaults to status reason phrase)
+     * @param string $instance A URI reference identifying the specific occurrence
+     * @param array<string, mixed> $extensions Additional problem detail members
+     *
+     * @throws \JsonException If encoding fails
+     *
+     * @return Response The problem details response
+     */
+    public function problem(
+        int $status,
+        string $detail = '',
+        string $type = '',
+        string $title = '',
+        string $instance = '',
+        array $extensions = [],
+    ): Response {
+        $resolvedTitle = $title !== '' ? $title : StatusText::get($status);
+
+        $body = [
+            'type'     => $type,
+            'title'    => $resolvedTitle,
+            'status'   => $status,
+            'detail'   => $detail,
+            'instance' => $instance,
+        ];
+
+        $body = array_filter(
+            $body,
+            static fn(mixed $value): bool => $value !== '',
+        );
+
+        $body = array_merge($body, $extensions);
+
+        $defaultOptions = JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        $encoded = json_encode($body, $defaultOptions);
+
+        return new Response($status, ['Content-Type' => 'application/problem+json'], $encoded);
+    }
+
+    /**
+     * Create a streamed response whose body is produced incrementally at send time,
+     * for large or generated output that shouldn't be buffered in memory.
+     *
+     * @param Closure(callable(string): bool): void $producer Emits chunks through the writer it is handed
+     * @param int $status The HTTP status code
+     * @param array<string, string|string[]> $headers Response headers
+     *
+     * @return StreamedResponse
+     */
+    public function stream(Closure $producer, int $status = 200, array $headers = []): StreamedResponse
+    {
+        return new StreamedResponse($producer, $status, $headers);
+    }
+
+    /**
+     * Create a Server-Sent Events (text/event-stream) response. The handler receives an
+     * SseWriter and pushes frames; under Swoole it may loop with Co::sleep() until the
+     * client disconnects.
+     *
+     * Headers are set for reverse-proxy compatibility: `Cache-Control: no-cache, no-transform`
+     * stops Cloudflare (and other CDNs) from buffering or compressing the stream, and
+     * `X-Accel-Buffering: no` disables nginx buffering. Use SseWriter::comment() as a
+     * periodic heartbeat to survive proxy idle timeouts.
+     *
+     * @param Closure(SseWriter): void $handler Pushes SSE frames through the given writer
+     * @param int $status The HTTP status code
+     *
+     * @return StreamedResponse
+     */
+    public function sse(Closure $handler, int $status = 200): StreamedResponse
+    {
+        $producer = static function (callable $write) use ($handler): void {
+            $handler(new SseWriter($write));
+        };
+
+        return new StreamedResponse($producer, $status, [
+            'Content-Type'      => 'text/event-stream',
+            'Cache-Control'     => 'no-cache, no-transform',
+            'Connection'        => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * Detect a file's MIME type: content-based sniffing via finfo, falling back to
+     * the extension database for inconclusive results (league/mime-type-detection).
+     *
+     * @param string $path The file path
+     *
+     * @return string The detected MIME type, or application/octet-stream if unknown
+     */
+    private function guessMimeType(string $path): string
+    {
+        $sample = '';
+
+        if (is_file($path)) {
+            $read = file_get_contents($path, false, null, 0, 4096);
+
+            if ($read !== false) {
+                $sample = $read;
+            }
+        }
+
+        return $this->mimeDetector->detectMimeType($path, $sample) ?? 'application/octet-stream';
+    }
+}
