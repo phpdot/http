@@ -567,7 +567,7 @@ final class Request implements ServerRequestInterface
      *
      * @return mixed The parameter value, default, or all parameters
      */
-    public function query(?string $key = null, mixed $default = null): mixed
+    public function query(null|string $key = null, mixed $default = null): mixed
     {
         $params = $this->request->getQueryParams();
 
@@ -885,7 +885,7 @@ final class Request implements ServerRequestInterface
      *
      * @return DateTimeImmutable|null The parsed date, or null on failure
      */
-    public function date(string $key, ?string $format = null): ?DateTimeImmutable
+    public function date(string $key, null|string $format = null): null|DateTimeImmutable
     {
         $value = $this->all()[$key] ?? null;
 
@@ -916,7 +916,7 @@ final class Request implements ServerRequestInterface
      *
      * @return T|null The enum instance, or null if not matched
      */
-    public function enum(string $key, string $enumClass): ?BackedEnum
+    public function enum(string $key, string $enumClass): null|BackedEnum
     {
         $value = $this->all()[$key] ?? null;
 
@@ -964,7 +964,7 @@ final class Request implements ServerRequestInterface
      *
      * @return string|null The first header value, or default
      */
-    public function header(string $key, ?string $default = null): ?string
+    public function header(string $key, null|string $default = null): null|string
     {
         $values = $this->request->getHeader($key);
 
@@ -992,7 +992,7 @@ final class Request implements ServerRequestInterface
      *
      * @return string|null The token string, or null if not present
      */
-    public function bearerToken(): ?string
+    public function bearerToken(): null|string
     {
         $header = $this->request->getHeaderLine('Authorization');
 
@@ -1014,7 +1014,7 @@ final class Request implements ServerRequestInterface
      *
      * @return array{username: string, password: string}|null The credentials, or null
      */
-    public function basicCredentials(): ?array
+    public function basicCredentials(): null|array
     {
         $header = $this->request->getHeaderLine('Authorization');
 
@@ -1077,7 +1077,7 @@ final class Request implements ServerRequestInterface
      *
      * @return int|null The content length, or null if not present or invalid
      */
-    public function contentLength(): ?int
+    public function contentLength(): null|int
     {
         $header = $this->request->getHeaderLine('Content-Length');
 
@@ -1150,7 +1150,7 @@ final class Request implements ServerRequestInterface
      *
      * @return string|null The preferred type, or null if no match
      */
-    public function preferredType(array $available): ?string
+    public function preferredType(array $available): null|string
     {
         $acceptHeader = $this->request->getHeaderLine('Accept');
 
@@ -1178,7 +1178,7 @@ final class Request implements ServerRequestInterface
      *
      * @return string|null The preferred language, or null if no match
      */
-    public function preferredLanguage(array $available): ?string
+    public function preferredLanguage(array $available): null|string
     {
         $header = $this->request->getHeaderLine('Accept-Language');
 
@@ -1305,7 +1305,7 @@ final class Request implements ServerRequestInterface
      *
      * @return int|null The port number, or null if not specified
      */
-    public function port(): ?int
+    public function port(): null|int
     {
         if ($this->isTrustedProxy() && ($this->config->trustedHeaders & self::HEADER_X_FORWARDED_PORT) !== 0) {
             $port = $this->request->getHeaderLine('X-Forwarded-Port');
@@ -1410,7 +1410,7 @@ final class Request implements ServerRequestInterface
      *
      * @return string|null The segment value, or default
      */
-    public function segment(int $index, ?string $default = null): ?string
+    public function segment(int $index, null|string $default = null): null|string
     {
         $segments = $this->segments();
 
@@ -1520,7 +1520,7 @@ final class Request implements ServerRequestInterface
      *
      * @return string|null The cookie value, or default
      */
-    public function cookie(string $key, ?string $default = null): ?string
+    public function cookie(string $key, null|string $default = null): null|string
     {
         $cookies = $this->request->getCookieParams();
 

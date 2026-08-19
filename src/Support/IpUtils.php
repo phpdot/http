@@ -35,12 +35,11 @@ final class IpUtils
     ];
 
     /**
-     * @var array<string, bool> Memoized inRange() results
-     */
-    private static array $cache = [];
-
-    /**
      * Check if an IP address falls within a CIDR range.
+     *
+     * Deliberately not memoized: the check is two inet_pton() calls and a
+     * masked comparison, while a result cache keyed by client IP is unbounded
+     * growth in a shared static for the lifetime of a Swoole worker.
      *
      * @param string $ip The IP address to check
      * @param string $cidr The CIDR notation range (e.g. "192.168.1.0/24" or bare IP "192.168.1.1")
@@ -49,13 +48,7 @@ final class IpUtils
      */
     public static function inRange(string $ip, string $cidr): bool
     {
-        $cacheKey = $ip . '|' . $cidr;
-
-        if (array_key_exists($cacheKey, self::$cache)) {
-            return self::$cache[$cacheKey];
-        }
-
-        return self::$cache[$cacheKey] = self::compute($ip, $cidr);
+        return self::compute($ip, $cidr);
     }
 
     /**
@@ -117,18 +110,7 @@ final class IpUtils
     }
 
     /**
-     * Clear the memoization cache. Use between unrelated request cycles
-     * if the cache size becomes a concern (long-running workers).
-     *
-     * @return void
-     */
-    public static function clearCache(): void
-    {
-        self::$cache = [];
-    }
-
-    /**
-     * Compute the actual CIDR membership check (uncached).
+     * Compute the actual CIDR membership check.
      *
      * An empty or non-numeric prefix is rejected: without the guard,
      * "1.2.3.4/" would coerce to prefix 0 and match every address.

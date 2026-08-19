@@ -35,7 +35,7 @@ final class TooManyRequestsException extends HttpException
         string $type = '',
         string $instance = '',
         array $extensions = [],
-        ?Throwable $previous = null,
+        null|Throwable $previous = null,
     ) {
         parent::__construct(429, $message, $detail, $type, $instance, array_merge(['retry_after' => $this->retryAfter], $extensions), $previous);
     }

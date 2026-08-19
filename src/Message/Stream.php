@@ -136,7 +136,7 @@ final class Stream implements StreamInterface
         return $resource;
     }
 
-    public function getSize(): ?int
+    public function getSize(): null|int
     {
         if ($this->resource === null) {
             return null;
@@ -263,7 +263,7 @@ final class Stream implements StreamInterface
         return $contents;
     }
 
-    public function getMetadata(?string $key = null): mixed
+    public function getMetadata(null|string $key = null): mixed
     {
         if ($this->resource === null) {
             return $key !== null ? null : [];

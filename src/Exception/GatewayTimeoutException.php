@@ -33,7 +33,7 @@ final class GatewayTimeoutException extends HttpException
         string $type = '',
         string $instance = '',
         array $extensions = [],
-        ?Throwable $previous = null,
+        null|Throwable $previous = null,
     ) {
         parent::__construct(504, $message, $detail, $type, $instance, $extensions, $previous);
     }

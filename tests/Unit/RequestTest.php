@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace PHPdot\Http\Tests\Unit;
 
 use DateTimeImmutable;
+use PHPdot\Http\Config\HttpConfig;
 use PHPdot\Http\Message\Request;
 use PHPdot\Http\Message\ServerRequest;
 use PHPdot\Http\Message\UploadedFile;
 use PHPdot\Http\Message\Uri;
-use PHPdot\Http\Config\HttpConfig;
 use PHPdot\Http\Tests\Stubs\Color;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;

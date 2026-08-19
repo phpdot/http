@@ -36,7 +36,7 @@ final class UnprocessableEntityException extends HttpException
         string $type = '',
         string $instance = '',
         array $extensions = [],
-        ?Throwable $previous = null,
+        null|Throwable $previous = null,
     ) {
         parent::__construct(422, $message, $detail, $type, $instance, array_merge(['errors' => $this->errors], $extensions), $previous);
     }

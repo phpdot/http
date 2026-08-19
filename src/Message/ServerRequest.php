@@ -29,7 +29,7 @@ final class ServerRequest implements ServerRequestInterface
 
     private string $method;
 
-    private ?string $requestTarget = null;
+    private null|string $requestTarget = null;
 
     private UriInterface $uri;
 

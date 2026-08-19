@@ -39,8 +39,8 @@ final class Cookie
     public function __construct(
         private readonly string $name,
         private readonly string $value = '',
-        private readonly ?DateTimeInterface $expires = null,
-        private readonly ?int $maxAge = null,
+        private readonly null|DateTimeInterface $expires = null,
+        private readonly null|int $maxAge = null,
         private readonly string $path = '/',
         private readonly string $domain = '',
         private readonly bool $secure = true,
@@ -84,7 +84,7 @@ final class Cookie
      *
      * @return DateTimeInterface|null The expiration date, or null for session cookie
      */
-    public function getExpires(): ?DateTimeInterface
+    public function getExpires(): null|DateTimeInterface
     {
         return $this->expires;
     }
@@ -94,7 +94,7 @@ final class Cookie
      *
      * @return int|null The max age, or null if not set
      */
-    public function getMaxAge(): ?int
+    public function getMaxAge(): null|int
     {
         return $this->maxAge;
     }
@@ -203,7 +203,7 @@ final class Cookie
      *
      * @return self A new Cookie instance
      */
-    public function withExpires(?DateTimeInterface $expires): self
+    public function withExpires(null|DateTimeInterface $expires): self
     {
         return new self(
             name: $this->name,
@@ -226,7 +226,7 @@ final class Cookie
      *
      * @return self A new Cookie instance
      */
-    public function withMaxAge(?int $maxAge): self
+    public function withMaxAge(null|int $maxAge): self
     {
         return new self(
             name: $this->name,

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace PHPdot\Http\Tests\Unit;
 
 use PHPdot\Http\Config\CookieConfig;
+use PHPdot\Http\Config\HttpConfig;
 use PHPdot\Http\Factory\ResponseFactory;
 use PHPdot\Http\Message\Request;
 use PHPdot\Http\Message\ServerRequest;
-use PHPdot\Http\Config\HttpConfig;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

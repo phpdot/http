@@ -33,7 +33,7 @@ final class ForbiddenException extends HttpException
         string $type = '',
         string $instance = '',
         array $extensions = [],
-        ?Throwable $previous = null,
+        null|Throwable $previous = null,
     ) {
         parent::__construct(403, $message, $detail, $type, $instance, $extensions, $previous);
     }

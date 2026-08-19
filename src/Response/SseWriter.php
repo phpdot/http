@@ -47,7 +47,7 @@ final class SseWriter
      *
      * @return bool False if the client has disconnected
      */
-    public function send(string $data, ?string $event = null, ?string $id = null, ?int $retry = null): bool
+    public function send(string $data, null|string $event = null, null|string $id = null, null|int $retry = null): bool
     {
         $frame = '';
 

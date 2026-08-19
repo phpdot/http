@@ -35,7 +35,7 @@ final class MethodNotAllowedException extends HttpException
         string $type = '',
         string $instance = '',
         array $extensions = [],
-        ?Throwable $previous = null,
+        null|Throwable $previous = null,
     ) {
         parent::__construct(405, $message, $detail, $type, $instance, array_merge(['allowed_methods' => $this->allowedMethods], $extensions), $previous);
     }

@@ -40,9 +40,9 @@ final class UploadedFile implements UploadedFileInterface
         \UPLOAD_ERR_EXTENSION,
     ];
 
-    private ?StreamInterface $stream = null;
+    private null|StreamInterface $stream = null;
 
-    private ?string $file = null;
+    private null|string $file = null;
 
     private bool $moved = false;
 
@@ -59,10 +59,10 @@ final class UploadedFile implements UploadedFileInterface
      */
     public function __construct(
         StreamInterface|string $streamOrFile,
-        private readonly ?int $size = null,
+        private readonly null|int $size = null,
         private readonly int $error = \UPLOAD_ERR_OK,
-        private readonly ?string $clientFilename = null,
-        private readonly ?string $clientMediaType = null,
+        private readonly null|string $clientFilename = null,
+        private readonly null|string $clientMediaType = null,
     ) {
         if (!in_array($this->error, self::UPLOAD_ERRORS, true)) {
             throw new InvalidArgumentException('Invalid upload error status; must be an UPLOAD_ERR_* constant.');
@@ -117,7 +117,7 @@ final class UploadedFile implements UploadedFileInterface
         $this->stream = null;
     }
 
-    public function getSize(): ?int
+    public function getSize(): null|int
     {
         return $this->size;
     }
@@ -127,12 +127,12 @@ final class UploadedFile implements UploadedFileInterface
         return $this->error;
     }
 
-    public function getClientFilename(): ?string
+    public function getClientFilename(): null|string
     {
         return $this->clientFilename;
     }
 
-    public function getClientMediaType(): ?string
+    public function getClientMediaType(): null|string
     {
         return $this->clientMediaType;
     }

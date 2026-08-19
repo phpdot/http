@@ -48,7 +48,7 @@ final class Uri implements UriInterface
 
     private string $host = '';
 
-    private ?int $port = null;
+    private null|int $port = null;
 
     private string $path = '';
 
@@ -127,7 +127,7 @@ final class Uri implements UriInterface
         return $this->host;
     }
 
-    public function getPort(): ?int
+    public function getPort(): null|int
     {
         return $this->port;
     }
@@ -176,7 +176,7 @@ final class Uri implements UriInterface
      * @param string $user The user name
      * @param string|null $password The password, if any
      */
-    public function withUserInfo(string $user, ?string $password = null): static
+    public function withUserInfo(string $user, null|string $password = null): static
     {
         $info = $this->encodeComponent($user, '');
 
@@ -204,7 +204,7 @@ final class Uri implements UriInterface
     /**
      * @param int|null $port The port (null removes it; default ports are dropped)
      */
-    public function withPort(?int $port): static
+    public function withPort(null|int $port): static
     {
         $clone = clone $this;
         $clone->port = $this->filterPort($port);
@@ -319,7 +319,7 @@ final class Uri implements UriInterface
      *
      * @return int|null The validated port
      */
-    private function filterPort(?int $port): ?int
+    private function filterPort(null|int $port): null|int
     {
         if ($port === null) {
             return null;
