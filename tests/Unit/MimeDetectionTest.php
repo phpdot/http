@@ -54,11 +54,16 @@ final class MimeDetectionTest extends TestCase
         }
     }
 
+    /**
+     * The payload is fixed rather than random: an arbitrary 32-byte body can collide
+     * with a libmagic signature — 0x4D5A alone reads as application/x-dosexec — which
+     * would fail this fallback assertion at random. This digest matches no signature.
+     */
     #[Test]
     public function unknown_content_and_extension_falls_back_to_octet_stream(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'mime') . '.zzznotathing';
-        file_put_contents($path, random_bytes(32));
+        file_put_contents($path, hash('sha256', 'phpdot-mime-detection-probe', true));
 
         try {
             $response = $this->factory->download($path);
